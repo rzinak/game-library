@@ -248,41 +248,41 @@ onUnmounted(() => {
 
 <template>
   <div
-    class="fixed inset-0 z-[60] flex items-center justify-center bg-black/80 backdrop-blur-sm"
+    class="fixed inset-0 z-[60] flex items-center justify-center bg-black/70 backdrop-blur-sm"
     @click.self="emit('cancel')"
   >
-    <div class="flex flex-col bg-neutral-900 rounded-2xl border border-neutral-700 shadow-2xl
-                w-full max-w-2xl h-[72vh] overflow-hidden">
+    <div class="flex flex-col bg-zinc-950 rounded-lg border border-zinc-800 shadow-2xl
+                w-full max-w-2xl h-[70vh] overflow-hidden">
 
-      <!-- Header ─────────────────────────────────────────────── -->
-      <div class="flex items-center justify-between px-5 py-3.5 border-b border-neutral-800 shrink-0">
-        <h2 class="text-white font-bold">{{ title ?? "Select File" }}</h2>
+      <!-- Header -->
+      <div class="flex items-center justify-between px-4 py-3 border-b border-zinc-800 shrink-0">
+        <h2 class="text-sm font-semibold text-white">{{ title ?? "Select File" }}</h2>
         <button
           @click="emit('cancel')"
-          class="text-neutral-500 hover:text-white transition-colors"
+          class="text-zinc-500 hover:text-white transition-colors"
           aria-label="Close"
         >
-          <svg xmlns="http://www.w3.org/2000/svg" class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+          <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
           </svg>
         </button>
       </div>
 
-      <!-- Body ────────────────────────────────────────────────── -->
+      <!-- Body -->
       <div class="flex flex-1 overflow-hidden">
 
         <!-- Bookmarks sidebar -->
-        <nav class="w-36 shrink-0 border-r border-neutral-800 flex flex-col overflow-y-auto py-2">
-          <p class="px-3 mb-1 text-xs font-semibold uppercase tracking-wider text-neutral-600">Locations</p>
+        <nav class="w-32 shrink-0 border-r border-zinc-800 flex flex-col overflow-y-auto py-2">
+          <p class="px-3 mb-1 text-[10px] font-medium uppercase tracking-wider text-zinc-600">Locations</p>
           <button
             v-for="bm in bookmarks"
             :key="bm.path"
             @click="navigate(bm.path)"
             :title="bm.path"
-            class="text-left px-3 py-2 text-sm truncate transition-colors"
+            class="text-left px-3 py-1.5 text-xs truncate transition-colors"
             :class="currentPath === bm.path
-              ? 'bg-indigo-600/30 text-indigo-300 font-semibold'
-              : 'text-neutral-400 hover:bg-neutral-800 hover:text-white'"
+              ? 'bg-zinc-800 text-white font-medium'
+              : 'text-zinc-400 hover:bg-zinc-900 hover:text-zinc-200'"
           >
             {{ bm.label }}
           </button>
@@ -291,25 +291,25 @@ onUnmounted(() => {
         <!-- File list pane -->
         <div class="flex-1 flex flex-col overflow-hidden">
 
-          <!-- Breadcrumb path bar -->
-          <div class="flex items-center gap-1 px-3 py-2 border-b border-neutral-800 bg-neutral-950/40 shrink-0 overflow-x-auto">
+          <!-- Breadcrumb -->
+          <div class="flex items-center gap-1 px-3 py-2 border-b border-zinc-800 shrink-0 overflow-x-auto">
             <button
               v-if="currentPath !== '/'"
               @click="goUp"
-              class="shrink-0 text-neutral-500 hover:text-white mr-1 transition-colors"
-              title="Go up (B / Backspace)"
+              class="shrink-0 text-zinc-600 hover:text-white mr-1 transition-colors"
+              title="Go up"
             >
-              <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <svg xmlns="http://www.w3.org/2000/svg" class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7" />
               </svg>
             </button>
 
             <template v-for="(part, i) in pathParts" :key="part.path">
-              <span v-if="i > 0" class="text-neutral-700 text-xs">/</span>
+              <span v-if="i > 0" class="text-zinc-700 text-xs">/</span>
               <button
                 @click="navigate(part.path)"
-                class="text-xs text-neutral-400 hover:text-white transition-colors whitespace-nowrap shrink-0"
-                :class="i === pathParts.length - 1 ? 'text-neutral-200 font-medium' : ''"
+                class="text-xs text-zinc-500 hover:text-white transition-colors whitespace-nowrap shrink-0"
+                :class="i === pathParts.length - 1 ? 'text-zinc-300 font-medium' : ''"
               >
                 {{ part.label }}
               </button>
@@ -318,54 +318,47 @@ onUnmounted(() => {
 
           <!-- Entries -->
           <div ref="listEl" class="flex-1 overflow-y-auto focus:outline-none">
-            <!-- Loading -->
-            <div v-if="loading" class="flex items-center justify-center h-full gap-2 text-neutral-500 text-sm">
-              <svg class="animate-spin w-4 h-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+            <div v-if="loading" class="flex items-center justify-center h-full gap-2 text-zinc-600 text-xs">
+              <svg class="animate-spin w-3.5 h-3.5" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
                 <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"/>
                 <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z"/>
               </svg>
               Loading…
             </div>
 
-            <!-- Error -->
-            <div v-else-if="loadError" class="px-4 py-3 text-sm text-red-400">{{ loadError }}</div>
+            <div v-else-if="loadError" class="px-4 py-3 text-xs text-red-400">{{ loadError }}</div>
 
-            <!-- Empty -->
-            <div v-else-if="entries.length === 0" class="flex items-center justify-center h-full text-neutral-600 text-sm">
+            <div v-else-if="entries.length === 0" class="flex items-center justify-center h-full text-zinc-600 text-xs">
               Empty folder
             </div>
 
-            <!-- Rows -->
             <div
               v-else
               v-for="(entry, i) in entries"
               :key="entry.path"
               :data-idx="i"
               @click="activate(entry)"
-              class="flex items-center gap-3 px-4 py-2.5 cursor-pointer select-none transition-colors"
+              class="flex items-center gap-2.5 px-3 py-2 cursor-pointer select-none transition-colors"
               :class="i === focusedIdx
-                ? 'bg-indigo-600 text-white'
-                : 'text-neutral-300 hover:bg-neutral-800 hover:text-white'"
+                ? 'bg-zinc-800 text-white'
+                : 'text-zinc-400 hover:bg-zinc-900 hover:text-zinc-200'"
             >
               <!-- Icon -->
-              <span class="shrink-0 w-5 text-center">
+              <span class="shrink-0 w-4 text-center">
                 <svg v-if="entry.is_app_bundle" xmlns="http://www.w3.org/2000/svg"
-                  class="w-4 h-4 inline"
-                  :class="i === focusedIdx ? 'text-indigo-200' : 'text-sky-400'"
+                  class="w-3.5 h-3.5 inline text-zinc-400"
                   fill="none" viewBox="0 0 24 24" stroke="currentColor">
                   <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
                     d="M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
                 </svg>
                 <svg v-else-if="entry.is_dir" xmlns="http://www.w3.org/2000/svg"
-                  class="w-4 h-4 inline"
-                  :class="i === focusedIdx ? 'text-indigo-200' : 'text-yellow-400'"
+                  class="w-3.5 h-3.5 inline text-zinc-500"
                   fill="none" viewBox="0 0 24 24" stroke="currentColor">
                   <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
                     d="M3 7a2 2 0 012-2h4l2 2h8a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V7z" />
                 </svg>
                 <svg v-else xmlns="http://www.w3.org/2000/svg"
-                  class="w-4 h-4 inline"
-                  :class="i === focusedIdx ? 'text-indigo-200' : 'text-neutral-500'"
+                  class="w-3.5 h-3.5 inline text-zinc-600"
                   fill="none" viewBox="0 0 24 24" stroke="currentColor">
                   <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
                     d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
@@ -373,42 +366,37 @@ onUnmounted(() => {
               </span>
 
               <!-- Name -->
-              <span class="flex-1 text-sm truncate">{{ entry.name }}</span>
+              <span class="flex-1 text-xs truncate">{{ entry.name }}</span>
 
               <!-- Badges -->
               <span
                 v-if="entry.is_app_bundle"
-                class="shrink-0 text-xs px-1.5 py-0.5 rounded font-semibold"
-                :class="i === focusedIdx ? 'bg-white/20 text-white' : 'bg-sky-900/60 text-sky-300'"
+                class="shrink-0 text-[10px] px-1.5 py-0.5 rounded-sm bg-zinc-800 text-zinc-500"
+                :class="i === focusedIdx ? 'bg-zinc-700 text-zinc-300' : ''"
               >.app</span>
               <span
                 v-else-if="entry.is_executable"
-                class="shrink-0 text-xs px-1.5 py-0.5 rounded font-semibold"
-                :class="i === focusedIdx ? 'bg-white/20 text-white' : 'bg-green-900/60 text-green-400'"
+                class="shrink-0 text-[10px] px-1.5 py-0.5 rounded-sm bg-zinc-800 text-zinc-500"
+                :class="i === focusedIdx ? 'bg-zinc-700 text-zinc-300' : ''"
               >exec</span>
             </div>
           </div>
         </div>
       </div>
 
-      <!-- Footer ──────────────────────────────────────────────── -->
-      <div class="flex items-center justify-between gap-4 px-4 py-3
-                  border-t border-neutral-800 bg-neutral-950/30 shrink-0">
+      <!-- Footer -->
+      <div class="flex items-center justify-between gap-4 px-4 py-2.5 border-t border-zinc-800 shrink-0">
 
         <!-- Controller hints -->
-        <div class="flex items-center gap-3 flex-wrap">
-          <span class="flex items-center gap-1 text-xs text-neutral-600">
-            <kbd class="px-1.5 py-0.5 bg-neutral-800 rounded text-neutral-400">↑↓</kbd> Navigate
+        <div class="flex items-center gap-3">
+          <span class="flex items-center gap-1 text-[10px] text-zinc-600">
+            <kbd class="px-1 py-0.5 bg-zinc-900 border border-zinc-800 rounded text-zinc-500">↑↓</kbd> Navigate
           </span>
-          <span class="flex items-center gap-1 text-xs text-neutral-600">
-            <kbd class="px-1.5 py-0.5 bg-neutral-800 rounded text-neutral-400">A</kbd> Open / Select
+          <span class="flex items-center gap-1 text-[10px] text-zinc-600">
+            <kbd class="px-1 py-0.5 bg-zinc-900 border border-zinc-800 rounded text-zinc-500">A</kbd> Select
           </span>
-          <span class="flex items-center gap-1 text-xs text-neutral-600">
-            <kbd class="px-1.5 py-0.5 bg-neutral-800 rounded text-neutral-400">B</kbd> Back
-          </span>
-          <span class="flex items-center gap-1 text-xs text-neutral-600">
-            <kbd class="px-1.5 py-0.5 bg-neutral-800 rounded text-neutral-400">LB</kbd>
-            <kbd class="px-1.5 py-0.5 bg-neutral-800 rounded text-neutral-400">RB</kbd> Locations
+          <span class="flex items-center gap-1 text-[10px] text-zinc-600">
+            <kbd class="px-1 py-0.5 bg-zinc-900 border border-zinc-800 rounded text-zinc-500">B</kbd> Back
           </span>
         </div>
 
@@ -416,16 +404,16 @@ onUnmounted(() => {
         <div class="flex gap-2 shrink-0">
           <button
             @click="emit('cancel')"
-            class="px-3 py-1.5 text-sm rounded-lg border border-neutral-700
-                   text-neutral-400 hover:text-white hover:border-neutral-500 transition-colors"
+            class="px-3 py-1.5 text-xs rounded-md border border-zinc-700
+                   text-zinc-400 hover:bg-zinc-800 hover:text-white transition-colors"
           >
             Cancel
           </button>
           <button
             v-if="focusedEntry?.is_dir"
             @click="activateFocused"
-            class="px-3 py-1.5 text-sm font-semibold rounded-lg
-                   bg-neutral-700 hover:bg-neutral-600 text-white transition-colors"
+            class="px-3 py-1.5 text-xs font-medium rounded-md border border-zinc-700
+                   text-zinc-300 hover:bg-zinc-800 hover:text-white transition-colors"
           >
             Open
           </button>
@@ -433,8 +421,8 @@ onUnmounted(() => {
             v-else
             :disabled="!canSelect"
             @click="activateFocused"
-            class="px-3 py-1.5 text-sm font-semibold rounded-lg transition-colors
-                   bg-indigo-600 hover:bg-indigo-500 text-white
+            class="px-3 py-1.5 text-xs font-medium rounded-md transition-colors
+                   bg-white text-zinc-950 hover:bg-zinc-100
                    disabled:opacity-40 disabled:cursor-not-allowed"
           >
             Select

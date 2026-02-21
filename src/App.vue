@@ -82,7 +82,6 @@ const filteredGames = computed<Game[]>(() => {
   if (sortOption.value === "alpha") {
     result = [...result].sort((a, b) => a.title.localeCompare(b.title));
   }
-  // "recentlyAdded" keeps insertion order (Steam first, then custom by add time)
 
   return result;
 });
@@ -122,14 +121,12 @@ function onGameAdded(custom: CustomGame) {
 // ── Keyboard navigation ────────────────────────────────────────────────────
 
 function onKeyDown(e: KeyboardEvent) {
-  // Dialogs handle their own keys when open
   if (pendingLaunch.value) return;
   if (showAddModal.value) return;
 
   const count = filteredGames.value.length;
   if (count === 0) return;
 
-  // Approximate columns from the grid's minmax(150px) rule
   const cols = Math.floor(
     (document.getElementById("game-grid-area")?.clientWidth ?? 800) / 154
   );
@@ -166,7 +163,6 @@ type GamepadButtonName = "right" | "left" | "down" | "up" | "a" | "b";
 
 interface ButtonState {
   pressed: boolean;
-  /** timestamp of last press — used for repeat delay */
   lastAt: number;
 }
 
@@ -179,10 +175,9 @@ function gamepadButtonId(padIndex: number, btn: GamepadButtonName): `${number}-$
   return `${padIndex}-${btn}`;
 }
 
-/** Maps standard gamepad button indices to logical names */
 const BUTTON_MAP: Record<number, GamepadButtonName> = {
-  0: "a",    // Cross / A
-  1: "b",    // Circle / B
+  0: "a",
+  1: "b",
   12: "up",
   13: "down",
   14: "left",
@@ -210,7 +205,6 @@ function pollGamepads() {
       const id = gamepadButtonId(pad.index, name);
       const state = gamepadState.get(id) ?? { pressed: false, lastAt: 0 };
 
-      // Also check left analogue stick for directional navigation
       const stickX = pad.axes[0] ?? 0;
       const stickY = pad.axes[1] ?? 0;
 
@@ -224,19 +218,15 @@ function pollGamepads() {
       const shouldFire =
         isPressed &&
         (!state.pressed
-          ? true // first press
+          ? true
           : now - state.lastAt > (state.lastAt === 0 ? INITIAL_REPEAT_DELAY : HELD_REPEAT_INTERVAL));
 
       if (shouldFire && count > 0) {
-        // While AddGameModal (and its FileExplorer child) is open, those components
-        // manage their own input via capture-phase keyboard listeners and their own
-        // gamepad loop — App.vue should stay silent.
         if (showAddModal.value) {
           gamepadState.set(id, { pressed: true, lastAt: now });
           continue;
         }
 
-        // When a dialog is open, only A (confirm) and B (cancel) are active
         if (pendingLaunch.value) {
           if (name === "a") confirmLaunch();
           else if (name === "b") cancelLaunch();
@@ -291,7 +281,7 @@ onUnmounted(() => {
 </script>
 
 <template>
-  <div class="flex h-screen bg-neutral-950 text-white overflow-hidden">
+  <div class="flex h-screen bg-zinc-950 text-white overflow-hidden">
     <Sidebar
       :search="search"
       :platform-filter="platformFilter"
@@ -310,17 +300,13 @@ onUnmounted(() => {
       <Transition name="slide-down">
         <div
           v-if="notification"
-          class="flex items-start gap-3 mb-4 px-4 py-3 rounded-lg text-sm font-medium"
+          class="flex items-start gap-3 mb-4 px-4 py-3 rounded-md text-sm border"
           :class="notification.type === 'error'
-            ? 'bg-red-900/60 border border-red-700 text-red-200'
-            : 'bg-indigo-900/60 border border-indigo-700 text-indigo-200'"
+            ? 'bg-red-950/50 border-red-900 text-red-300'
+            : 'bg-zinc-900 border-zinc-700 text-zinc-300'"
         >
-          <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4 shrink-0 mt-0.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-              d="M12 9v2m0 4h.01M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z" />
-          </svg>
           <span class="flex-1">{{ notification.message }}</span>
-          <button @click="notification = null" class="opacity-60 hover:opacity-100 transition-opacity">
+          <button @click="notification = null" class="text-zinc-500 hover:text-white transition-colors">
             <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
               <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
             </svg>
@@ -330,19 +316,19 @@ onUnmounted(() => {
 
       <!-- Loading -->
       <div v-if="loading" class="flex items-center justify-center h-full">
-        <svg class="animate-spin w-10 h-10 text-indigo-400" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+        <svg class="animate-spin w-6 h-6 text-zinc-500" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
           <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4" />
           <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z" />
         </svg>
       </div>
 
       <!-- Error -->
-      <div v-else-if="loadError" class="flex flex-col items-center justify-center h-full gap-3 text-red-400">
-        <p class="text-lg font-semibold">Failed to load library</p>
-        <p class="text-sm text-neutral-500">{{ loadError }}</p>
+      <div v-else-if="loadError" class="flex flex-col items-center justify-center h-full gap-3 text-zinc-400">
+        <p class="text-sm font-medium text-white">Failed to load library</p>
+        <p class="text-sm text-zinc-500">{{ loadError }}</p>
         <button
           @click="loadGames"
-          class="mt-2 px-4 py-2 bg-neutral-800 hover:bg-neutral-700 text-white text-sm rounded-md transition-colors"
+          class="mt-2 px-4 py-2 text-sm rounded-md border border-zinc-700 hover:bg-zinc-800 transition-colors"
         >
           Retry
         </button>
@@ -350,11 +336,11 @@ onUnmounted(() => {
 
       <!-- Library header + grid -->
       <template v-else>
-        <div class="flex items-center justify-between mb-4">
-          <h1 class="text-xl font-bold text-white">
+        <div class="flex items-center justify-between mb-6">
+          <h1 class="text-sm font-medium text-zinc-400">
             {{ platformFilter === "all" ? "All Games" : platformFilter === "steam" ? "Steam" : "Custom" }}
           </h1>
-          <span class="text-sm text-neutral-500">{{ filteredGames.length }} game{{ filteredGames.length !== 1 ? "s" : "" }}</span>
+          <span class="text-xs text-zinc-600">{{ filteredGames.length }} game{{ filteredGames.length !== 1 ? "s" : "" }}</span>
         </div>
 
         <GameGrid
@@ -378,18 +364,17 @@ onUnmounted(() => {
       @confirm="confirmLaunch"
       @cancel="cancelLaunch"
     />
-
   </div>
 </template>
 
 <style>
 .slide-down-enter-active,
 .slide-down-leave-active {
-  transition: opacity 0.2s ease, transform 0.2s ease;
+  transition: opacity 0.15s ease, transform 0.15s ease;
 }
 .slide-down-enter-from,
 .slide-down-leave-to {
   opacity: 0;
-  transform: translateY(-8px);
+  transform: translateY(-6px);
 }
 </style>
