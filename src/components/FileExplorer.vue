@@ -1,0 +1,446 @@
+<script setup lang="ts">
+import { ref, computed, nextTick, onMounted, onUnmounted } from "vue";
+import { invoke } from "@tauri-apps/api/core";
+
+interface DirEntry {
+  name: string;
+  path: string;
+  is_dir: boolean;
+  is_executable: boolean;
+  is_app_bundle: boolean;
+}
+
+interface Bookmark {
+  label: string;
+  path: string;
+}
+
+const props = defineProps<{
+  title?: string;
+  /** If set, the "Select" button only activates for files matching this predicate. */
+  filter?: (entry: DirEntry) => boolean;
+}>();
+
+const emit = defineEmits<{
+  select: [path: string];
+  cancel: [];
+}>();
+
+// ── State ──────────────────────────────────────────────────────────────────
+
+const currentPath = ref("");
+const entries = ref<DirEntry[]>([]);
+const bookmarks = ref<Bookmark[]>([]);
+const focusedIdx = ref(0);
+const loading = ref(false);
+const loadError = ref("");
+const listEl = ref<HTMLElement | null>(null);
+
+// ── Navigation ─────────────────────────────────────────────────────────────
+
+async function navigate(path: string) {
+  loading.value = true;
+  loadError.value = "";
+  try {
+    entries.value = await invoke<DirEntry[]>("list_directory", { path });
+    currentPath.value = path;
+    focusedIdx.value = 0;
+  } catch (e) {
+    loadError.value = String(e);
+  } finally {
+    loading.value = false;
+  }
+}
+
+async function goUp() {
+  if (!currentPath.value) return;
+  const sep = currentPath.value.includes("\\") ? "\\" : "/";
+  const parts = currentPath.value.split(sep).filter(Boolean);
+  if (parts.length === 0) {
+    emit("cancel");
+    return;
+  }
+  parts.pop();
+  const parent = (currentPath.value.startsWith("/") ? "/" : "") + parts.join(sep) || sep;
+  await navigate(parent);
+}
+
+async function activate(entry: DirEntry) {
+  if (entry.is_dir) {
+    await navigate(entry.path);
+  } else {
+    emit("select", entry.path);
+  }
+}
+
+function activateFocused() {
+  const entry = entries.value[focusedIdx.value];
+  if (entry) activate(entry);
+}
+
+// ── Computed ───────────────────────────────────────────────────────────────
+
+const focusedEntry = computed(() => entries.value[focusedIdx.value] ?? null);
+
+const canSelect = computed(() => {
+  if (!focusedEntry.value) return false;
+  if (focusedEntry.value.is_dir) return false;
+  if (props.filter) return props.filter(focusedEntry.value);
+  return true;
+});
+
+const pathParts = computed(() => {
+  const sep = currentPath.value.includes("\\") ? "\\" : "/";
+  const parts = currentPath.value.split(sep).filter(Boolean);
+  return parts.map((part, i) => ({
+    label: part,
+    path: (currentPath.value.startsWith("/") ? "/" : "") + parts.slice(0, i + 1).join(sep),
+  }));
+});
+
+// ── Scroll focused item into view ─────────────────────────────────────────
+
+async function scrollIntoView() {
+  await nextTick();
+  listEl.value
+    ?.querySelector(`[data-idx="${focusedIdx.value}"]`)
+    ?.scrollIntoView({ block: "nearest" });
+}
+
+// ── Keyboard handler ───────────────────────────────────────────────────────
+
+function onKeyDown(e: KeyboardEvent) {
+  const count = entries.value.length;
+
+  switch (e.key) {
+    case "ArrowUp":
+      e.preventDefault();
+      e.stopPropagation();
+      focusedIdx.value = Math.max(focusedIdx.value - 1, 0);
+      scrollIntoView();
+      break;
+    case "ArrowDown":
+      e.preventDefault();
+      e.stopPropagation();
+      if (count > 0) focusedIdx.value = Math.min(focusedIdx.value + 1, count - 1);
+      scrollIntoView();
+      break;
+    case "Enter":
+      e.preventDefault();
+      e.stopPropagation();
+      activateFocused();
+      break;
+    case "Backspace":
+      e.preventDefault();
+      e.stopPropagation();
+      goUp();
+      break;
+    case "Escape":
+      e.stopPropagation();
+      emit("cancel");
+      break;
+  }
+}
+
+// ── Gamepad loop ───────────────────────────────────────────────────────────
+
+type BtnName = "up" | "down" | "a" | "b" | "lb" | "rb";
+
+const BUTTON_MAP: Record<number, BtnName> = {
+  0: "a",
+  1: "b",
+  4: "lb",
+  5: "rb",
+  12: "up",
+  13: "down",
+};
+
+interface BtnState { pressed: boolean; lastAt: number }
+
+const gpState = new Map<string, BtnState>();
+const INITIAL_DELAY = 350;
+const REPEAT_INTERVAL = 100;
+let rafId = 0;
+
+function jumpBookmark(delta: 1 | -1) {
+  const idx = bookmarks.value.findIndex((b) => b.path === currentPath.value);
+  const next = (idx + delta + bookmarks.value.length) % bookmarks.value.length;
+  const bm = bookmarks.value[next];
+  if (bm) navigate(bm.path);
+}
+
+function pollGamepads() {
+  const pads = navigator.getGamepads();
+  const now = performance.now();
+  const count = entries.value.length;
+
+  for (const pad of pads) {
+    if (!pad) continue;
+    const sy = pad.axes[1] ?? 0;
+
+    for (const [rawIdx, name] of Object.entries(BUTTON_MAP) as [string, BtnName][]) {
+      const btn = pad.buttons[Number(rawIdx)];
+      if (!btn) continue;
+      const id = `${pad.index}-${name}`;
+      const state = gpState.get(id) ?? { pressed: false, lastAt: 0 };
+
+      const isPressed =
+        btn.pressed ||
+        (name === "up" && sy < -0.5) ||
+        (name === "down" && sy > 0.5);
+
+      const elapsed = now - state.lastAt;
+      const shouldFire =
+        isPressed &&
+        (!state.pressed || elapsed > (state.lastAt === 0 ? INITIAL_DELAY : REPEAT_INTERVAL));
+
+      if (shouldFire) {
+        switch (name) {
+          case "up":
+            focusedIdx.value = Math.max(focusedIdx.value - 1, 0);
+            scrollIntoView();
+            break;
+          case "down":
+            if (count > 0) focusedIdx.value = Math.min(focusedIdx.value + 1, count - 1);
+            scrollIntoView();
+            break;
+          case "a":
+            activateFocused();
+            break;
+          case "b":
+            goUp();
+            break;
+          case "lb":
+            jumpBookmark(-1);
+            break;
+          case "rb":
+            jumpBookmark(1);
+            break;
+        }
+        gpState.set(id, { pressed: true, lastAt: now });
+      } else if (!isPressed && state.pressed) {
+        gpState.set(id, { pressed: false, lastAt: 0 });
+      }
+    }
+  }
+  rafId = requestAnimationFrame(pollGamepads);
+}
+
+// ── Lifecycle ──────────────────────────────────────────────────────────────
+
+onMounted(async () => {
+  // Capture phase so this runs before App.vue's handler
+  window.addEventListener("keydown", onKeyDown, { capture: true });
+  rafId = requestAnimationFrame(pollGamepads);
+
+  const bm = await invoke<Bookmark[]>("get_file_explorer_bookmarks");
+  bookmarks.value = bm;
+  if (bm.length > 0) {
+    await navigate(bm[0].path);
+  }
+});
+
+onUnmounted(() => {
+  window.removeEventListener("keydown", onKeyDown, { capture: true });
+  cancelAnimationFrame(rafId);
+});
+</script>
+
+<template>
+  <div
+    class="fixed inset-0 z-[60] flex items-center justify-center bg-black/80 backdrop-blur-sm"
+    @click.self="emit('cancel')"
+  >
+    <div class="flex flex-col bg-neutral-900 rounded-2xl border border-neutral-700 shadow-2xl
+                w-full max-w-2xl h-[72vh] overflow-hidden">
+
+      <!-- Header ─────────────────────────────────────────────── -->
+      <div class="flex items-center justify-between px-5 py-3.5 border-b border-neutral-800 shrink-0">
+        <h2 class="text-white font-bold">{{ title ?? "Select File" }}</h2>
+        <button
+          @click="emit('cancel')"
+          class="text-neutral-500 hover:text-white transition-colors"
+          aria-label="Close"
+        >
+          <svg xmlns="http://www.w3.org/2000/svg" class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+          </svg>
+        </button>
+      </div>
+
+      <!-- Body ────────────────────────────────────────────────── -->
+      <div class="flex flex-1 overflow-hidden">
+
+        <!-- Bookmarks sidebar -->
+        <nav class="w-36 shrink-0 border-r border-neutral-800 flex flex-col overflow-y-auto py-2">
+          <p class="px-3 mb-1 text-xs font-semibold uppercase tracking-wider text-neutral-600">Locations</p>
+          <button
+            v-for="bm in bookmarks"
+            :key="bm.path"
+            @click="navigate(bm.path)"
+            :title="bm.path"
+            class="text-left px-3 py-2 text-sm truncate transition-colors"
+            :class="currentPath === bm.path
+              ? 'bg-indigo-600/30 text-indigo-300 font-semibold'
+              : 'text-neutral-400 hover:bg-neutral-800 hover:text-white'"
+          >
+            {{ bm.label }}
+          </button>
+        </nav>
+
+        <!-- File list pane -->
+        <div class="flex-1 flex flex-col overflow-hidden">
+
+          <!-- Breadcrumb path bar -->
+          <div class="flex items-center gap-1 px-3 py-2 border-b border-neutral-800 bg-neutral-950/40 shrink-0 overflow-x-auto">
+            <button
+              v-if="currentPath !== '/'"
+              @click="goUp"
+              class="shrink-0 text-neutral-500 hover:text-white mr-1 transition-colors"
+              title="Go up (B / Backspace)"
+            >
+              <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7" />
+              </svg>
+            </button>
+
+            <template v-for="(part, i) in pathParts" :key="part.path">
+              <span v-if="i > 0" class="text-neutral-700 text-xs">/</span>
+              <button
+                @click="navigate(part.path)"
+                class="text-xs text-neutral-400 hover:text-white transition-colors whitespace-nowrap shrink-0"
+                :class="i === pathParts.length - 1 ? 'text-neutral-200 font-medium' : ''"
+              >
+                {{ part.label }}
+              </button>
+            </template>
+          </div>
+
+          <!-- Entries -->
+          <div ref="listEl" class="flex-1 overflow-y-auto focus:outline-none">
+            <!-- Loading -->
+            <div v-if="loading" class="flex items-center justify-center h-full gap-2 text-neutral-500 text-sm">
+              <svg class="animate-spin w-4 h-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"/>
+                <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z"/>
+              </svg>
+              Loading…
+            </div>
+
+            <!-- Error -->
+            <div v-else-if="loadError" class="px-4 py-3 text-sm text-red-400">{{ loadError }}</div>
+
+            <!-- Empty -->
+            <div v-else-if="entries.length === 0" class="flex items-center justify-center h-full text-neutral-600 text-sm">
+              Empty folder
+            </div>
+
+            <!-- Rows -->
+            <div
+              v-else
+              v-for="(entry, i) in entries"
+              :key="entry.path"
+              :data-idx="i"
+              @click="activate(entry)"
+              class="flex items-center gap-3 px-4 py-2.5 cursor-pointer select-none transition-colors"
+              :class="i === focusedIdx
+                ? 'bg-indigo-600 text-white'
+                : 'text-neutral-300 hover:bg-neutral-800 hover:text-white'"
+            >
+              <!-- Icon -->
+              <span class="shrink-0 w-5 text-center">
+                <svg v-if="entry.is_app_bundle" xmlns="http://www.w3.org/2000/svg"
+                  class="w-4 h-4 inline"
+                  :class="i === focusedIdx ? 'text-indigo-200' : 'text-sky-400'"
+                  fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                    d="M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
+                </svg>
+                <svg v-else-if="entry.is_dir" xmlns="http://www.w3.org/2000/svg"
+                  class="w-4 h-4 inline"
+                  :class="i === focusedIdx ? 'text-indigo-200' : 'text-yellow-400'"
+                  fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                    d="M3 7a2 2 0 012-2h4l2 2h8a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V7z" />
+                </svg>
+                <svg v-else xmlns="http://www.w3.org/2000/svg"
+                  class="w-4 h-4 inline"
+                  :class="i === focusedIdx ? 'text-indigo-200' : 'text-neutral-500'"
+                  fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                    d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                </svg>
+              </span>
+
+              <!-- Name -->
+              <span class="flex-1 text-sm truncate">{{ entry.name }}</span>
+
+              <!-- Badges -->
+              <span
+                v-if="entry.is_app_bundle"
+                class="shrink-0 text-xs px-1.5 py-0.5 rounded font-semibold"
+                :class="i === focusedIdx ? 'bg-white/20 text-white' : 'bg-sky-900/60 text-sky-300'"
+              >.app</span>
+              <span
+                v-else-if="entry.is_executable"
+                class="shrink-0 text-xs px-1.5 py-0.5 rounded font-semibold"
+                :class="i === focusedIdx ? 'bg-white/20 text-white' : 'bg-green-900/60 text-green-400'"
+              >exec</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Footer ──────────────────────────────────────────────── -->
+      <div class="flex items-center justify-between gap-4 px-4 py-3
+                  border-t border-neutral-800 bg-neutral-950/30 shrink-0">
+
+        <!-- Controller hints -->
+        <div class="flex items-center gap-3 flex-wrap">
+          <span class="flex items-center gap-1 text-xs text-neutral-600">
+            <kbd class="px-1.5 py-0.5 bg-neutral-800 rounded text-neutral-400">↑↓</kbd> Navigate
+          </span>
+          <span class="flex items-center gap-1 text-xs text-neutral-600">
+            <kbd class="px-1.5 py-0.5 bg-neutral-800 rounded text-neutral-400">A</kbd> Open / Select
+          </span>
+          <span class="flex items-center gap-1 text-xs text-neutral-600">
+            <kbd class="px-1.5 py-0.5 bg-neutral-800 rounded text-neutral-400">B</kbd> Back
+          </span>
+          <span class="flex items-center gap-1 text-xs text-neutral-600">
+            <kbd class="px-1.5 py-0.5 bg-neutral-800 rounded text-neutral-400">LB</kbd>
+            <kbd class="px-1.5 py-0.5 bg-neutral-800 rounded text-neutral-400">RB</kbd> Locations
+          </span>
+        </div>
+
+        <!-- Actions -->
+        <div class="flex gap-2 shrink-0">
+          <button
+            @click="emit('cancel')"
+            class="px-3 py-1.5 text-sm rounded-lg border border-neutral-700
+                   text-neutral-400 hover:text-white hover:border-neutral-500 transition-colors"
+          >
+            Cancel
+          </button>
+          <button
+            v-if="focusedEntry?.is_dir"
+            @click="activateFocused"
+            class="px-3 py-1.5 text-sm font-semibold rounded-lg
+                   bg-neutral-700 hover:bg-neutral-600 text-white transition-colors"
+          >
+            Open
+          </button>
+          <button
+            v-else
+            :disabled="!canSelect"
+            @click="activateFocused"
+            class="px-3 py-1.5 text-sm font-semibold rounded-lg transition-colors
+                   bg-indigo-600 hover:bg-indigo-500 text-white
+                   disabled:opacity-40 disabled:cursor-not-allowed"
+          >
+            Select
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+</template>

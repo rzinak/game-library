@@ -1,0 +1,88 @@
+<script setup lang="ts">
+import { onMounted, onUnmounted } from "vue";
+import type { Game } from "../types/game";
+
+defineProps<{ game: Game }>();
+
+const emit = defineEmits<{
+  confirm: [];
+  cancel: [];
+}>();
+
+function onKeyDown(e: KeyboardEvent) {
+  if (e.key === "Enter") {
+    e.preventDefault();
+    emit("confirm");
+  } else if (e.key === "Escape") {
+    e.preventDefault();
+    emit("cancel");
+  }
+}
+
+function onBackdropClick(e: MouseEvent) {
+  if (e.target === e.currentTarget) emit("cancel");
+}
+
+onMounted(() => window.addEventListener("keydown", onKeyDown));
+onUnmounted(() => window.removeEventListener("keydown", onKeyDown));
+</script>
+
+<template>
+  <div
+    class="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm"
+    @click="onBackdropClick"
+  >
+    <div class="flex flex-col items-center gap-5 bg-neutral-900 rounded-2xl border border-neutral-700
+                shadow-2xl p-8 w-72">
+
+      <!-- Cover art -->
+      <div class="w-32 rounded-lg overflow-hidden shadow-lg aspect-[2/3] bg-neutral-800 shrink-0">
+        <img
+          v-if="game.coverImage"
+          :src="game.coverImage"
+          :alt="game.title"
+          class="w-full h-full object-cover"
+        />
+        <div v-else class="w-full h-full flex items-center justify-center text-neutral-600">
+          <svg xmlns="http://www.w3.org/2000/svg" class="w-10 h-10" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5"
+              d="M15 5v2m0 4v2m0 4v2M5 5a2 2 0 00-2 2v3a2 2 0 110 4v3a2 2 0 002 2h14a2 2 0 002-2v-3a2 2 0 110-4V7a2 2 0 00-2-2H5z" />
+          </svg>
+        </div>
+      </div>
+
+      <!-- Title + badge -->
+      <div class="flex flex-col items-center gap-2 text-center">
+        <p class="text-white font-bold text-lg leading-tight">{{ game.title }}</p>
+        <span
+          class="text-xs font-semibold px-2 py-0.5 rounded"
+          :class="game.platform === 'steam' ? 'bg-sky-600 text-white' : 'bg-violet-600 text-white'"
+        >
+          {{ game.platform === "steam" ? "Steam" : "Custom" }}
+        </span>
+      </div>
+
+      <p class="text-neutral-400 text-sm text-center -mt-1">Launch this game?</p>
+
+      <!-- Actions -->
+      <div class="flex gap-3 w-full">
+        <button
+          @click="emit('cancel')"
+          class="flex-1 py-2 text-sm rounded-lg border border-neutral-700
+                 text-neutral-400 hover:text-white hover:border-neutral-500 transition-colors"
+        >
+          Cancel
+        </button>
+        <button
+          autofocus
+          @click="emit('confirm')"
+          class="flex-1 py-2 text-sm font-semibold rounded-lg
+                 bg-indigo-600 hover:bg-indigo-500 text-white transition-colors"
+        >
+          Launch
+        </button>
+      </div>
+
+    </div>
+  </div>
+</template>
