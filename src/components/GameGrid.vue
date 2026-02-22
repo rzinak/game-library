@@ -1,8 +1,9 @@
 <script setup lang="ts">
+import { ref, watch, nextTick } from "vue";
 import type { Game } from "../types/game";
 import GameCard from "./GameCard.vue";
 
-defineProps<{
+const props = defineProps<{
   games: Game[];
   focusedIndex: number;
 }>();
@@ -11,6 +12,17 @@ const emit = defineEmits<{
   launch: [game: Game];
   "update:focusedIndex": [index: number];
 }>();
+
+const cardEls = ref<HTMLElement[]>([]);
+
+function setCardRef(el: unknown, i: number) {
+  if (el) cardEls.value[i] = (el as InstanceType<typeof GameCard>).$el as HTMLElement;
+}
+
+watch(() => props.focusedIndex, async (idx) => {
+  await nextTick();
+  cardEls.value[idx]?.scrollIntoView({ block: "nearest", behavior: "smooth" });
+});
 </script>
 
 <template>
@@ -22,8 +34,9 @@ const emit = defineEmits<{
     <GameCard
       v-for="(game, i) in games"
       :key="game.key"
+      :ref="(el) => setCardRef(el, i)"
       :game="game"
-      :focused="i === focusedIndex"
+      :focused="i === props.focusedIndex"
       @launch="emit('launch', game)"
       @focus="emit('update:focusedIndex', i)"
     />
