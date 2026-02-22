@@ -62,6 +62,22 @@ export function useGamepad(
 
   const state = new Map<string, BtnState>();
   let rafId = 0;
+  let prevEnabled = true;
+
+  function snapshotAll(pads: readonly (Gamepad | null)[]) {
+    for (const pad of pads) {
+      if (!pad) continue;
+      for (const [idxStr, action] of buttonEntries) {
+        const btnIdx = Number(idxStr);
+        const id = `${pad.index}-${action}`;
+        if (isPhysical(pad, btnIdx, action)) {
+          // Use Infinity for pressedAt so repeat-fire can never trigger:
+          // the button must be fully released and freshly pressed to produce an action.
+          state.set(id, { pressed: true, pressedAt: Infinity, lastFiredAt: Infinity });
+        }
+      }
+    }
+  }
 
   function isPhysical(pad: Gamepad, btnIdx: number, action: GamepadAction): boolean {
     const button = pad.buttons[btnIdx];
@@ -81,6 +97,13 @@ export function useGamepad(
     const pads = navigator.getGamepads();
     const now = performance.now();
     const enabled = options?.enabled === undefined ? true : toValue(options.enabled);
+
+    // On false → true transition, snapshot current button state so any button
+    // held during the disabled period (or on a reconnected pad) doesn't ghost-fire.
+    if (enabled && !prevEnabled) {
+      snapshotAll(pads);
+    }
+    prevEnabled = enabled;
 
     for (const pad of pads) {
       if (!pad) continue;

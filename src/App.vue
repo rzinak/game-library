@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, onUnmounted } from "vue";
 import { invoke } from "@tauri-apps/api/core";
+import { info, warn, error as logError } from "@tauri-apps/plugin-log";
 import Sidebar from "./components/Sidebar.vue";
 import GameGrid from "./components/GameGrid.vue";
 import AddGameModal from "./components/AddGameModal.vue";
@@ -62,9 +63,13 @@ type SidebarItem = (typeof SIDEBAR_ITEMS)[number];
 async function loadGames() {
   loading.value = true;
   loadError.value = "";
+  info("Loading game library...");
   try {
     const [steamGames, customGames] = await Promise.all([
-      invoke<SteamGame[]>("get_steam_games").catch(() => [] as SteamGame[]),
+      invoke<SteamGame[]>("get_steam_games").catch((e) => {
+        warn(`Steam game discovery failed: ${e}`);
+        return [] as SteamGame[];
+      }),
       invoke<CustomGame[]>("get_custom_games"),
     ]);
 
@@ -72,7 +77,9 @@ async function loadGames() {
       ...steamGames.map(fromSteamGame),
       ...customGames.map(fromCustomGame),
     ];
+    info(`Library loaded: ${steamGames.length} Steam game(s), ${customGames.length} custom game(s)`);
   } catch (e) {
+    logError(`Failed to load library: ${e}`);
     loadError.value = String(e);
   } finally {
     loading.value = false;
@@ -110,31 +117,38 @@ const filteredGames = computed<Game[]>(() => {
 // ── Launch ─────────────────────────────────────────────────────────────────
 
 function requestLaunch(game: Game) {
+  info(`Launch requested: "${game.title}" [${game.platform}]`);
   pendingLaunch.value = game;
 }
 
-async function confirmLaunch() {
+function confirmLaunch() {
   const game = pendingLaunch.value;
   if (!game) return;
   pendingLaunch.value = null;
-  try {
-    await invoke("launch_game", {
-      key: game.key,
-      appId: game.appId ?? null,
-      executable: game.executable ?? null,
-    });
-  } catch (e) {
+  info(`Launching: "${game.title}" [${game.platform}]`);
+  // Fire-and-forget: close the dialog immediately so the controller can't
+  // re-trigger it, and surface any error via the notification banner.
+  invoke("launch_game", {
+    key: game.key,
+    appId: game.appId ?? null,
+    executable: game.executable ?? null,
+  }).catch((e) => {
+    logError(`Failed to launch "${game.title}": ${e}`);
     showNotification(String(e));
-  }
+  });
 }
 
 function cancelLaunch() {
+  if (pendingLaunch.value) {
+    info(`Launch cancelled: "${pendingLaunch.value.title}"`);
+  }
   pendingLaunch.value = null;
 }
 
 // ── Add game ───────────────────────────────────────────────────────────────
 
 function onGameAdded(custom: CustomGame) {
+  info(`Custom game added: "${custom.title}" (id=${custom.id})`);
   allGames.value.push(fromCustomGame(custom));
   showAddModal.value = false;
 }
@@ -267,14 +281,14 @@ function onKeyDown(e: KeyboardEvent) {
 
 // ── Gamepad navigation ─────────────────────────────────────────────────────
 
-const gamepadEnabled = computed(() => !showAddModal.value && !searchKeyboardOpen.value);
+const gamepadEnabled = computed(
+  () =>
+    !showAddModal.value &&
+    !searchKeyboardOpen.value &&
+    pendingLaunch.value === null
+);
 
 useGamepad((action) => {
-  if (pendingLaunch.value) {
-    if (action === "a") confirmLaunch();
-    else if (action === "b") cancelLaunch();
-    return;
-  }
   if (focusArea.value === "sidebar") {
     navigateSidebar(action);
   } else {
