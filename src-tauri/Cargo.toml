@@ -27,4 +27,6 @@ uuid = { version = "1", features = ["v4"] }
 keyvalues-parser = "0.2"
 thiserror = "1"
 sysinfo = "0.33"
+tauri-plugin-log = "2"
+log = "0.4"
 
