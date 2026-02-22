@@ -20,6 +20,7 @@ const form = reactive({
 });
 
 const explorerMode = ref<"executable" | "cover" | null>(null);
+const mouseDownOnOverlay = ref(false);
 
 async function submit() {
   if (!form.title.trim() || !form.executable.trim()) {
@@ -54,8 +55,12 @@ function onExplorerSelect(path: string) {
   explorerMode.value = null;
 }
 
-function onBackdropClick(e: MouseEvent) {
-  if (e.target === e.currentTarget) emit("close");
+function onBackdropMouseDown(e: MouseEvent) {
+  mouseDownOnOverlay.value = e.target === e.currentTarget;
+}
+
+function onBackdropMouseUp(e: MouseEvent) {
+  if (mouseDownOnOverlay.value && e.target === e.currentTarget) emit("close");
 }
 
 function onKeyDown(e: KeyboardEvent) {
@@ -66,7 +71,8 @@ function onKeyDown(e: KeyboardEvent) {
 <template>
   <div
     class="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm"
-    @click="onBackdropClick"
+    @mousedown="onBackdropMouseDown"
+    @mouseup="onBackdropMouseUp"
     @keydown="onKeyDown"
   >
     <div class="w-full max-w-md bg-zinc-950 rounded-lg shadow-2xl border border-zinc-800 p-5">
