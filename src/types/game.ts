@@ -1,3 +1,5 @@
+import { convertFileSrc } from "@tauri-apps/api/core";
+
 export type Platform = "steam" | "custom";
 
 export interface SteamGame {
@@ -48,8 +50,13 @@ export function fromCustomGame(g: CustomGame): Game {
     key: `custom-${g.id}`,
     title: g.title,
     platform: "custom",
-    coverImage: g.cover_image,
+    coverImage: resolveCustomCover(g.cover_image),
     executable: g.executable,
     tags: g.tags,
   };
+}
+
+function resolveCustomCover(path: string | null): string | null {
+  if (!path) return null;
+  return convertFileSrc(path);
 }
