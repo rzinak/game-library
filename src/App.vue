@@ -160,8 +160,7 @@ function activateSidebarItem() {
       focusedIndex.value = 0;
       break;
     case "sort":
-      sidebarInputActive.value = true;
-      sidebarRef.value?.focusSort();
+      sortOption.value = sortOption.value === "alpha" ? "recentlyAdded" : "alpha";
       break;
     case "add-game":
       showAddModal.value = true;
@@ -198,9 +197,11 @@ function navigateSidebar(action: GamepadAction) {
 
 function navigateGrid(action: GamepadAction) {
   const count = filteredGames.value.length;
-  const cols = Math.floor(
-    (document.getElementById("game-grid-area")?.clientWidth ?? 800) / 154
-  );
+  // Match CSS: repeat(auto-fill, minmax(150px, 1fr)) with gap-4 (16px).
+  // Container has px-6 padding (48px total), so grid content width = clientWidth - 48.
+  // Cols = floor((contentWidth + gap) / (minCard + gap)) = floor((clientWidth - 32) / 166)
+  const areaWidth = document.getElementById("game-grid-area")?.clientWidth ?? 848;
+  const cols = Math.max(1, Math.floor((areaWidth - 32) / 166));
   if (count > 0) {
     switch (action) {
       case "left":

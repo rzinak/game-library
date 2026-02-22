@@ -97,18 +97,22 @@ defineExpose({ focusSearch, focusSort, blurActive });
     <!-- Sort -->
     <div class="flex flex-col gap-1.5">
       <p class="text-xs text-zinc-500 px-2 font-medium">Sort by</p>
-      <select
-        ref="sortSelectRef"
-        :value="sortOption"
-        @change="emit('update:sortOption', ($event.target as HTMLSelectElement).value as SortOption)"
-        @blur="emit('inputBlur')"
-        class="w-full px-2 py-1.5 text-sm bg-zinc-900 text-zinc-300 rounded-md border border-zinc-700
-               focus:outline-none hover:bg-zinc-800 hover:text-white cursor-pointer transition-colors"
+      <div
+        class="rounded-md"
         :class="sidebarFocusedIndex === 4 ? 'ring-2 ring-zinc-500' : ''"
       >
-        <option value="alpha">A – Z</option>
-        <option value="recentlyAdded">Recently Added</option>
-      </select>
+        <select
+          ref="sortSelectRef"
+          :value="sortOption"
+          @change="emit('update:sortOption', ($event.target as HTMLSelectElement).value as SortOption)"
+          @blur="emit('inputBlur')"
+          class="w-full px-2 py-1.5 text-sm bg-zinc-900 text-zinc-300 rounded-md border border-zinc-700
+                 focus:outline-none hover:bg-zinc-800 hover:text-white cursor-pointer transition-colors"
+        >
+          <option value="alpha">A – Z</option>
+          <option value="recentlyAdded">Recently Added</option>
+        </select>
+      </div>
     </div>
 
     <!-- Spacer -->
