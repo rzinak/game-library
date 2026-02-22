@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { ref } from "vue";
 import type { PlatformFilter, SortOption } from "../types/game";
 
 defineProps<{
@@ -8,6 +9,7 @@ defineProps<{
   totalGames: number;
   steamCount: number;
   customCount: number;
+  sidebarFocusedIndex: number; // -1 = sidebar not focused
 }>();
 
 const emit = defineEmits<{
@@ -15,7 +17,25 @@ const emit = defineEmits<{
   "update:platformFilter": [value: PlatformFilter];
   "update:sortOption": [value: SortOption];
   addGame: [];
+  inputBlur: [];
 }>();
+
+const searchInputRef = ref<HTMLInputElement>();
+const sortSelectRef = ref<HTMLSelectElement>();
+
+function focusSearch() {
+  searchInputRef.value?.focus();
+}
+
+function focusSort() {
+  sortSelectRef.value?.focus();
+}
+
+function blurActive() {
+  (document.activeElement as HTMLElement)?.blur();
+}
+
+defineExpose({ focusSearch, focusSort, blurActive });
 </script>
 
 <template>
@@ -37,12 +57,15 @@ const emit = defineEmits<{
           d="M21 21l-4.35-4.35M11 19a8 8 0 100-16 8 8 0 000 16z" />
       </svg>
       <input
+        ref="searchInputRef"
         type="text"
         placeholder="Search…"
         :value="search"
         @input="emit('update:search', ($event.target as HTMLInputElement).value)"
+        @blur="emit('inputBlur')"
         class="w-full pl-8 pr-3 py-1.5 text-sm bg-zinc-900 text-white placeholder-zinc-500
                rounded-md border border-zinc-800 focus:outline-none focus:border-zinc-600 focus:ring-1 focus:ring-zinc-600 transition-colors"
+        :class="sidebarFocusedIndex === 0 ? 'ring-2 ring-zinc-500' : ''"
       />
     </div>
 
@@ -51,7 +74,7 @@ const emit = defineEmits<{
       <p class="text-xs text-zinc-500 px-2 mb-1 font-medium">Platform</p>
 
       <button
-        v-for="opt in ([
+        v-for="(opt, idx) in ([
           { value: 'all',    label: 'All',    count: totalGames },
           { value: 'steam',  label: 'Steam',  count: steamCount },
           { value: 'custom', label: 'Custom', count: customCount },
@@ -59,9 +82,12 @@ const emit = defineEmits<{
         :key="opt.value"
         @click="emit('update:platformFilter', opt.value)"
         class="flex items-center justify-between w-full px-2 py-1.5 rounded-md text-sm transition-colors"
-        :class="platformFilter === opt.value
-          ? 'bg-zinc-800 text-white font-medium'
-          : 'text-zinc-400 hover:bg-zinc-900 hover:text-zinc-200'"
+        :class="[
+          platformFilter === opt.value
+            ? 'bg-zinc-800 text-white font-medium'
+            : 'text-zinc-400 hover:bg-zinc-900 hover:text-zinc-200',
+          sidebarFocusedIndex === idx + 1 ? 'ring-2 ring-zinc-500' : ''
+        ]"
       >
         <span>{{ opt.label }}</span>
         <span class="text-xs text-zinc-600">{{ opt.count }}</span>
@@ -72,10 +98,13 @@ const emit = defineEmits<{
     <div class="flex flex-col gap-1.5">
       <p class="text-xs text-zinc-500 px-2 font-medium">Sort by</p>
       <select
+        ref="sortSelectRef"
         :value="sortOption"
         @change="emit('update:sortOption', ($event.target as HTMLSelectElement).value as SortOption)"
+        @blur="emit('inputBlur')"
         class="w-full px-2 py-1.5 text-sm bg-zinc-900 text-zinc-300 rounded-md border border-zinc-700
                focus:outline-none hover:bg-zinc-800 hover:text-white cursor-pointer transition-colors"
+        :class="sidebarFocusedIndex === 4 ? 'ring-2 ring-zinc-500' : ''"
       >
         <option value="alpha">A – Z</option>
         <option value="recentlyAdded">Recently Added</option>
@@ -91,6 +120,7 @@ const emit = defineEmits<{
       class="flex items-center justify-center gap-1.5 w-full px-3 py-2 rounded-md
              border border-zinc-700 text-zinc-300 text-sm font-medium
              hover:bg-zinc-800 hover:text-white transition-colors"
+      :class="sidebarFocusedIndex === 5 ? 'ring-2 ring-zinc-500' : ''"
     >
       <svg xmlns="http://www.w3.org/2000/svg" class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" />

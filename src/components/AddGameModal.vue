@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { reactive, ref } from "vue";
+import { reactive, ref, onMounted, onUnmounted } from "vue";
 import { invoke } from "@tauri-apps/api/core";
 import FileExplorer from "./FileExplorer.vue";
 import type { CustomGame } from "../types/game";
@@ -63,9 +63,193 @@ function onBackdropMouseUp(e: MouseEvent) {
   if (mouseDownOnOverlay.value && e.target === e.currentTarget) emit("close");
 }
 
-function onKeyDown(e: KeyboardEvent) {
-  if (e.key === "Escape" && !explorerMode.value) emit("close");
+// ── Form controller navigation ─────────────────────────────────────────────
+
+// Indices map to the visual top-to-bottom order of focusable elements
+const FORM_ITEMS = [
+  "title",
+  "executable",
+  "browse-executable",
+  "coverImage",
+  "browse-cover",
+  "tags",
+  "notes",
+  "cancel",
+  "submit",
+] as const;
+const formFocusedIndex = ref(0);
+const formInputActive = ref(false);
+
+const titleRef = ref<HTMLInputElement>();
+const executableRef = ref<HTMLInputElement>();
+const browseExecRef = ref<HTMLButtonElement>();
+const coverImageRef = ref<HTMLInputElement>();
+const browseCoverRef = ref<HTMLButtonElement>();
+const tagsRef = ref<HTMLInputElement>();
+const notesRef = ref<HTMLTextAreaElement>();
+const cancelRef = ref<HTMLButtonElement>();
+const submitRef = ref<HTMLButtonElement>();
+
+function blurActiveInput() {
+  (document.activeElement as HTMLElement)?.blur();
+  formInputActive.value = false;
 }
+
+function activateFormItem() {
+  switch (FORM_ITEMS[formFocusedIndex.value]) {
+    case "title":
+      formInputActive.value = true;
+      titleRef.value?.focus();
+      break;
+    case "executable":
+      formInputActive.value = true;
+      executableRef.value?.focus();
+      break;
+    case "browse-executable":
+      explorerMode.value = "executable";
+      break;
+    case "coverImage":
+      formInputActive.value = true;
+      coverImageRef.value?.focus();
+      break;
+    case "browse-cover":
+      explorerMode.value = "cover";
+      break;
+    case "tags":
+      formInputActive.value = true;
+      tagsRef.value?.focus();
+      break;
+    case "notes":
+      formInputActive.value = true;
+      notesRef.value?.focus();
+      break;
+    case "cancel":
+      emit("close");
+      break;
+    case "submit":
+      submit();
+      break;
+  }
+}
+
+function navigateForm(dir: "up" | "down") {
+  formFocusedIndex.value =
+    dir === "up"
+      ? Math.max(formFocusedIndex.value - 1, 0)
+      : Math.min(formFocusedIndex.value + 1, FORM_ITEMS.length - 1);
+}
+
+function onKeyDown(e: KeyboardEvent) {
+  if (explorerMode.value) return;
+
+  if (formInputActive.value) {
+    if (e.key === "Escape") {
+      e.stopPropagation();
+      blurActiveInput();
+    }
+    return;
+  }
+
+  switch (e.key) {
+    case "Escape":
+      emit("close");
+      break;
+    case "ArrowUp":
+      e.preventDefault();
+      navigateForm("up");
+      break;
+    case "ArrowDown":
+      e.preventDefault();
+      navigateForm("down");
+      break;
+    case "Enter":
+      e.preventDefault();
+      activateFormItem();
+      break;
+  }
+}
+
+// ── Gamepad loop ───────────────────────────────────────────────────────────
+
+type BtnName = "up" | "down" | "a" | "b";
+
+const BUTTON_MAP: Record<number, BtnName> = {
+  0: "a",
+  1: "b",
+  12: "up",
+  13: "down",
+};
+
+interface BtnState { pressed: boolean; lastAt: number }
+
+const gpState = new Map<string, BtnState>();
+const INITIAL_DELAY = 400;
+const REPEAT_INTERVAL = 150;
+let rafId = 0;
+
+function pollGamepads() {
+  const pads = navigator.getGamepads();
+  const now = performance.now();
+
+  for (const pad of pads) {
+    if (!pad) continue;
+    const sy = pad.axes[1] ?? 0;
+
+    for (const [rawIdx, name] of Object.entries(BUTTON_MAP) as [string, BtnName][]) {
+      const btn = pad.buttons[Number(rawIdx)];
+      if (!btn) continue;
+
+      const id = `modal-${pad.index}-${name}`;
+      const state = gpState.get(id) ?? { pressed: false, lastAt: 0 };
+
+      const isPressed =
+        btn.pressed ||
+        (name === "up" && sy < -0.5) ||
+        (name === "down" && sy > 0.5);
+
+      if (explorerMode.value) {
+        // FileExplorer owns input - just track releases to prevent ghost presses on close
+        if (!isPressed && state.pressed) {
+          gpState.set(id, { pressed: false, lastAt: 0 });
+        }
+        continue;
+      }
+
+      const elapsed = now - state.lastAt;
+      const shouldFire =
+        isPressed &&
+        (!state.pressed || elapsed > (state.lastAt === 0 ? INITIAL_DELAY : REPEAT_INTERVAL));
+
+      if (shouldFire) {
+        if (formInputActive.value) {
+          if (name === "b") blurActiveInput();
+        } else {
+          switch (name) {
+            case "up":   navigateForm("up");   break;
+            case "down": navigateForm("down"); break;
+            case "a":    activateFormItem();   break;
+            case "b":    emit("close");        break;
+          }
+        }
+        gpState.set(id, { pressed: true, lastAt: now });
+      } else if (!isPressed && state.pressed) {
+        gpState.set(id, { pressed: false, lastAt: 0 });
+      }
+    }
+  }
+
+  rafId = requestAnimationFrame(pollGamepads);
+}
+
+onMounted(() => {
+  window.addEventListener("keydown", onKeyDown);
+  rafId = requestAnimationFrame(pollGamepads);
+});
+
+onUnmounted(() => {
+  window.removeEventListener("keydown", onKeyDown);
+  cancelAnimationFrame(rafId);
+});
 </script>
 
 <template>
@@ -73,7 +257,6 @@ function onKeyDown(e: KeyboardEvent) {
     class="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm"
     @mousedown="onBackdropMouseDown"
     @mouseup="onBackdropMouseUp"
-    @keydown="onKeyDown"
   >
     <div class="w-full max-w-md bg-zinc-950 rounded-lg shadow-2xl border border-zinc-800 p-5">
 
@@ -98,12 +281,16 @@ function onKeyDown(e: KeyboardEvent) {
             Title <span class="text-zinc-600">*</span>
           </label>
           <input
+            ref="titleRef"
             v-model="form.title"
             type="text"
             placeholder="e.g. Hollow Knight"
             class="w-full px-3 py-1.5 bg-zinc-900 text-white text-sm rounded-md border border-zinc-800
                    focus:outline-none focus:border-zinc-600 focus:ring-1 focus:ring-zinc-600
                    placeholder-zinc-600 transition-colors"
+            :class="formFocusedIndex === 0 ? 'ring-2 ring-zinc-500' : ''"
+            @focus="formInputActive = true; formFocusedIndex = 0"
+            @blur="formInputActive = false"
           />
         </div>
 
@@ -114,18 +301,24 @@ function onKeyDown(e: KeyboardEvent) {
           </label>
           <div class="flex gap-2">
             <input
+              ref="executableRef"
               v-model="form.executable"
               type="text"
               placeholder="Path to executable or .app bundle"
               class="flex-1 min-w-0 px-3 py-1.5 bg-zinc-900 text-white text-sm rounded-md border border-zinc-800
                      focus:outline-none focus:border-zinc-600 focus:ring-1 focus:ring-zinc-600
                      placeholder-zinc-600 transition-colors"
+              :class="formFocusedIndex === 1 ? 'ring-2 ring-zinc-500' : ''"
+              @focus="formInputActive = true; formFocusedIndex = 1"
+              @blur="formInputActive = false"
             />
             <button
+              ref="browseExecRef"
               type="button"
               @click="explorerMode = 'executable'"
               class="shrink-0 px-3 py-1.5 text-sm rounded-md border border-zinc-700
                      text-zinc-400 hover:bg-zinc-800 hover:text-white transition-colors"
+              :class="formFocusedIndex === 2 ? 'ring-2 ring-zinc-500' : ''"
               title="Browse"
             >
               <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -141,18 +334,24 @@ function onKeyDown(e: KeyboardEvent) {
           <label class="text-xs text-zinc-400 font-medium">Cover image</label>
           <div class="flex gap-2">
             <input
+              ref="coverImageRef"
               v-model="form.coverImage"
               type="text"
               placeholder="Path to image (optional)"
               class="flex-1 min-w-0 px-3 py-1.5 bg-zinc-900 text-white text-sm rounded-md border border-zinc-800
                      focus:outline-none focus:border-zinc-600 focus:ring-1 focus:ring-zinc-600
                      placeholder-zinc-600 transition-colors"
+              :class="formFocusedIndex === 3 ? 'ring-2 ring-zinc-500' : ''"
+              @focus="formInputActive = true; formFocusedIndex = 3"
+              @blur="formInputActive = false"
             />
             <button
+              ref="browseCoverRef"
               type="button"
               @click="explorerMode = 'cover'"
               class="shrink-0 px-3 py-1.5 text-sm rounded-md border border-zinc-700
                      text-zinc-400 hover:bg-zinc-800 hover:text-white transition-colors"
+              :class="formFocusedIndex === 4 ? 'ring-2 ring-zinc-500' : ''"
               title="Browse"
             >
               <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -168,12 +367,16 @@ function onKeyDown(e: KeyboardEvent) {
         <div class="flex flex-col gap-1.5">
           <label class="text-xs text-zinc-400 font-medium">Tags</label>
           <input
+            ref="tagsRef"
             v-model="form.tags"
             type="text"
             placeholder="rpg, indie, metroidvania (comma-separated)"
             class="w-full px-3 py-1.5 bg-zinc-900 text-white text-sm rounded-md border border-zinc-800
                    focus:outline-none focus:border-zinc-600 focus:ring-1 focus:ring-zinc-600
                    placeholder-zinc-600 transition-colors"
+            :class="formFocusedIndex === 5 ? 'ring-2 ring-zinc-500' : ''"
+            @focus="formInputActive = true; formFocusedIndex = 5"
+            @blur="formInputActive = false"
           />
         </div>
 
@@ -181,12 +384,16 @@ function onKeyDown(e: KeyboardEvent) {
         <div class="flex flex-col gap-1.5">
           <label class="text-xs text-zinc-400 font-medium">Notes</label>
           <textarea
+            ref="notesRef"
             v-model="form.notes"
             rows="2"
             placeholder="Optional notes…"
             class="w-full px-3 py-1.5 bg-zinc-900 text-white text-sm rounded-md border border-zinc-800
                    focus:outline-none focus:border-zinc-600 focus:ring-1 focus:ring-zinc-600
                    placeholder-zinc-600 resize-none transition-colors"
+            :class="formFocusedIndex === 6 ? 'ring-2 ring-zinc-500' : ''"
+            @focus="formInputActive = true; formFocusedIndex = 6"
+            @blur="formInputActive = false"
           />
         </div>
 
@@ -194,19 +401,23 @@ function onKeyDown(e: KeyboardEvent) {
 
         <div class="flex justify-end gap-2 pt-1">
           <button
+            ref="cancelRef"
             type="button"
             @click="emit('close')"
             class="px-4 py-1.5 text-sm text-zinc-400 hover:text-white rounded-md
                    border border-zinc-700 hover:bg-zinc-800 transition-colors"
+            :class="formFocusedIndex === 7 ? 'ring-2 ring-zinc-500' : ''"
           >
             Cancel
           </button>
           <button
+            ref="submitRef"
             type="submit"
             :disabled="form.submitting"
             class="px-4 py-1.5 text-sm font-medium bg-white text-zinc-950
                    rounded-md hover:bg-zinc-100 transition-colors
                    disabled:opacity-40 disabled:cursor-not-allowed"
+            :class="formFocusedIndex === 8 ? 'ring-2 ring-zinc-500 ring-offset-1 ring-offset-zinc-950' : ''"
           >
             {{ form.submitting ? "Adding…" : "Add Game" }}
           </button>

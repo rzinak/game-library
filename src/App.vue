@@ -36,6 +36,24 @@ const search = ref("");
 const platformFilter = ref<PlatformFilter>("all");
 const sortOption = ref<SortOption>("alpha");
 
+// ── Sidebar focus state ────────────────────────────────────────────────────
+
+const focusArea = ref<"grid" | "sidebar">("grid");
+const sidebarFocusedIndex = ref(0);
+const sidebarInputActive = ref(false);
+const sidebarRef = ref<InstanceType<typeof Sidebar>>();
+
+// Matches the visual top-to-bottom order in Sidebar.vue
+const SIDEBAR_ITEMS = [
+  "search",
+  "filter-all",
+  "filter-steam",
+  "filter-custom",
+  "sort",
+  "add-game",
+] as const;
+type SidebarItem = (typeof SIDEBAR_ITEMS)[number];
+
 // ── Data loading ───────────────────────────────────────────────────────────
 
 async function loadGames() {
@@ -118,35 +136,114 @@ function onGameAdded(custom: CustomGame) {
   showAddModal.value = false;
 }
 
+// ── Sidebar navigation ─────────────────────────────────────────────────────
+
+function activateSidebarItem() {
+  const item: SidebarItem = SIDEBAR_ITEMS[sidebarFocusedIndex.value];
+  switch (item) {
+    case "search":
+      sidebarInputActive.value = true;
+      sidebarRef.value?.focusSearch();
+      break;
+    case "filter-all":
+      platformFilter.value = "all";
+      focusedIndex.value = 0;
+      break;
+    case "filter-steam":
+      platformFilter.value = "steam";
+      focusedIndex.value = 0;
+      break;
+    case "filter-custom":
+      platformFilter.value = "custom";
+      focusedIndex.value = 0;
+      break;
+    case "sort":
+      sidebarInputActive.value = true;
+      sidebarRef.value?.focusSort();
+      break;
+    case "add-game":
+      showAddModal.value = true;
+      break;
+  }
+}
+
+function navigateSidebar(dir: "up" | "down" | "right" | "a" | "b") {
+  if (sidebarInputActive.value) {
+    if (dir === "b") {
+      sidebarRef.value?.blurActive();
+      sidebarInputActive.value = false;
+    }
+    return;
+  }
+  switch (dir) {
+    case "up":
+      sidebarFocusedIndex.value = Math.max(sidebarFocusedIndex.value - 1, 0);
+      break;
+    case "down":
+      sidebarFocusedIndex.value = Math.min(sidebarFocusedIndex.value + 1, SIDEBAR_ITEMS.length - 1);
+      break;
+    case "right":
+      focusArea.value = "grid";
+      break;
+    case "a":
+      activateSidebarItem();
+      break;
+    case "b":
+      focusArea.value = "grid";
+      break;
+  }
+}
+
 // ── Keyboard navigation ────────────────────────────────────────────────────
 
 function onKeyDown(e: KeyboardEvent) {
   if (pendingLaunch.value) return;
   if (showAddModal.value) return;
 
-  const count = filteredGames.value.length;
-  if (count === 0) return;
+  if (focusArea.value === "sidebar") {
+    if (sidebarInputActive.value) {
+      if (e.key === "Escape") {
+        sidebarRef.value?.blurActive();
+        sidebarInputActive.value = false;
+      }
+      return;
+    }
+    switch (e.key) {
+      case "ArrowDown": e.preventDefault(); navigateSidebar("down"); break;
+      case "ArrowUp":   e.preventDefault(); navigateSidebar("up");   break;
+      case "ArrowRight":e.preventDefault(); navigateSidebar("right");break;
+      case "Enter":     e.preventDefault(); navigateSidebar("a");    break;
+      case "Escape":    navigateSidebar("b"); break;
+    }
+    return;
+  }
 
+  // Grid navigation
+  const count = filteredGames.value.length;
   const cols = Math.floor(
     (document.getElementById("game-grid-area")?.clientWidth ?? 800) / 154
   );
 
   switch (e.key) {
-    case "ArrowRight":
-      e.preventDefault();
-      focusedIndex.value = Math.min(focusedIndex.value + 1, count - 1);
-      break;
     case "ArrowLeft":
       e.preventDefault();
-      focusedIndex.value = Math.max(focusedIndex.value - 1, 0);
+      if (count === 0 || focusedIndex.value % cols === 0) {
+        focusArea.value = "sidebar";
+      } else {
+        focusedIndex.value = Math.max(focusedIndex.value - 1, 0);
+      }
+      break;
+    case "ArrowRight":
+      e.preventDefault();
+      if (count > 0) focusedIndex.value = Math.min(focusedIndex.value + 1, count - 1);
       break;
     case "ArrowDown":
       e.preventDefault();
-      focusedIndex.value = Math.min(focusedIndex.value + cols, count - 1);
+      if (count > 0) focusedIndex.value = Math.min(focusedIndex.value + cols, count - 1);
       break;
     case "ArrowUp":
       e.preventDefault();
-      focusedIndex.value = Math.max(focusedIndex.value - cols, 0);
+      if (count > 0) focusedIndex.value = Math.max(focusedIndex.value - cols, 0);
       break;
     case "Enter":
       e.preventDefault();
@@ -221,7 +318,7 @@ function pollGamepads() {
           ? true
           : now - state.lastAt > (state.lastAt === 0 ? INITIAL_REPEAT_DELAY : HELD_REPEAT_INTERVAL));
 
-      if (shouldFire && count > 0) {
+      if (shouldFire) {
         if (showAddModal.value) {
           gamepadState.set(id, { pressed: true, lastAt: now });
           continue;
@@ -234,27 +331,49 @@ function pollGamepads() {
           continue;
         }
 
-        switch (name) {
-          case "right":
-            focusedIndex.value = Math.min(focusedIndex.value + 1, count - 1);
-            break;
-          case "left":
-            focusedIndex.value = Math.max(focusedIndex.value - 1, 0);
-            break;
-          case "down":
-            focusedIndex.value = Math.min(focusedIndex.value + cols, count - 1);
-            break;
-          case "up":
-            focusedIndex.value = Math.max(focusedIndex.value - cols, 0);
-            break;
-          case "a":
-            if (filteredGames.value[focusedIndex.value]) {
-              requestLaunch(filteredGames.value[focusedIndex.value]);
-            }
-            break;
-          case "b":
-            showAddModal.value = false;
-            break;
+        if (focusArea.value === "sidebar") {
+          switch (name) {
+            case "up":    navigateSidebar("up");    break;
+            case "down":  navigateSidebar("down");  break;
+            case "right": navigateSidebar("right"); break;
+            case "a":     navigateSidebar("a");     break;
+            case "b":     navigateSidebar("b");     break;
+          }
+          gamepadState.set(id, { pressed: true, lastAt: now });
+          continue;
+        }
+
+        // Grid navigation
+        if (count > 0) {
+          switch (name) {
+            case "left":
+              if (focusedIndex.value % cols === 0) {
+                focusArea.value = "sidebar";
+              } else {
+                focusedIndex.value = Math.max(focusedIndex.value - 1, 0);
+              }
+              break;
+            case "right":
+              focusedIndex.value = Math.min(focusedIndex.value + 1, count - 1);
+              break;
+            case "down":
+              focusedIndex.value = Math.min(focusedIndex.value + cols, count - 1);
+              break;
+            case "up":
+              focusedIndex.value = Math.max(focusedIndex.value - cols, 0);
+              break;
+            case "a":
+              if (filteredGames.value[focusedIndex.value]) {
+                requestLaunch(filteredGames.value[focusedIndex.value]);
+              }
+              break;
+            case "b":
+              showAddModal.value = false;
+              break;
+          }
+        } else if (name === "left") {
+          // No games but still allow going to sidebar
+          focusArea.value = "sidebar";
         }
         gamepadState.set(id, { pressed: true, lastAt: now });
       } else if (!isPressed && state.pressed) {
@@ -283,16 +402,19 @@ onUnmounted(() => {
 <template>
   <div class="flex h-screen bg-zinc-950 text-white overflow-hidden">
     <Sidebar
+      ref="sidebarRef"
       :search="search"
       :platform-filter="platformFilter"
       :sort-option="sortOption"
       :total-games="allGames.length"
       :steam-count="steamCount"
       :custom-count="customCount"
+      :sidebar-focused-index="focusArea === 'sidebar' ? sidebarFocusedIndex : -1"
       @update:search="search = $event; focusedIndex = 0"
       @update:platform-filter="platformFilter = $event; focusedIndex = 0"
       @update:sort-option="sortOption = $event"
       @add-game="showAddModal = true"
+      @input-blur="sidebarInputActive = false"
     />
 
     <main id="game-grid-area" class="flex-1 overflow-y-auto px-6 py-6 relative">
