@@ -66,7 +66,7 @@ async function goUp() {
 }
 
 async function activate(entry: DirEntry) {
-  if (entry.is_dir) {
+  if (entry.is_dir && !entry.is_app_bundle) {
     await navigate(entry.path);
   } else {
     emit("select", entry.path);
@@ -229,6 +229,25 @@ function pollGamepads() {
 // ── Lifecycle ──────────────────────────────────────────────────────────────
 
 onMounted(async () => {
+  // Pre-populate gpState with currently-held buttons so they don't ghost-fire
+  // immediately (e.g. the "A" press that opened this modal is still held).
+  const now = performance.now();
+  for (const pad of navigator.getGamepads()) {
+    if (!pad) continue;
+    const sy = pad.axes[1] ?? 0;
+    for (const [rawIdx, name] of Object.entries(BUTTON_MAP) as [string, BtnName][]) {
+      const btn = pad.buttons[Number(rawIdx)];
+      if (!btn) continue;
+      const isPressed =
+        btn.pressed ||
+        (name === "up" && sy < -0.5) ||
+        (name === "down" && sy > 0.5);
+      if (isPressed) {
+        gpState.set(`${pad.index}-${name}`, { pressed: true, lastAt: now });
+      }
+    }
+  }
+
   // Capture phase so this runs before App.vue's handler
   window.addEventListener("keydown", onKeyDown, { capture: true });
   rafId = requestAnimationFrame(pollGamepads);

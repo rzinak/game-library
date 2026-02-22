@@ -208,10 +208,9 @@ function pollGamepads() {
         (name === "down" && sy > 0.5);
 
       if (explorerMode.value) {
-        // FileExplorer owns input - just track releases to prevent ghost presses on close
-        if (!isPressed && state.pressed) {
-          gpState.set(id, { pressed: false, lastAt: 0 });
-        }
+        // FileExplorer owns input - mirror full button state so that when it
+        // closes, any button still held is not treated as a fresh press.
+        gpState.set(id, { pressed: isPressed, lastAt: isPressed ? now : 0 });
         continue;
       }
 
