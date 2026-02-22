@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { ref, computed, nextTick, onMounted, onUnmounted } from "vue";
 import { invoke } from "@tauri-apps/api/core";
+import { useGamepad } from "../composables/useGamepad";
 
 interface DirEntry {
   name: string;
@@ -66,7 +67,7 @@ async function goUp() {
 }
 
 async function activate(entry: DirEntry) {
-  if (entry.is_dir) {
+  if (entry.is_dir && !entry.is_app_bundle) {
     await navigate(entry.path);
   } else {
     emit("select", entry.path);
@@ -142,25 +143,7 @@ function onKeyDown(e: KeyboardEvent) {
   }
 }
 
-// ── Gamepad loop ───────────────────────────────────────────────────────────
-
-type BtnName = "up" | "down" | "a" | "b" | "lb" | "rb";
-
-const BUTTON_MAP: Record<number, BtnName> = {
-  0: "a",
-  1: "b",
-  4: "lb",
-  5: "rb",
-  12: "up",
-  13: "down",
-};
-
-interface BtnState { pressed: boolean; lastAt: number }
-
-const gpState = new Map<string, BtnState>();
-const INITIAL_DELAY = 350;
-const REPEAT_INTERVAL = 100;
-let rafId = 0;
+// ── Gamepad navigation ─────────────────────────────────────────────────────
 
 function jumpBookmark(delta: 1 | -1) {
   const idx = bookmarks.value.findIndex((b) => b.path === currentPath.value);
@@ -169,61 +152,41 @@ function jumpBookmark(delta: 1 | -1) {
   if (bm) navigate(bm.path);
 }
 
-function pollGamepads() {
-  const pads = navigator.getGamepads();
-  const now = performance.now();
+useGamepad((action) => {
   const count = entries.value.length;
-
-  for (const pad of pads) {
-    if (!pad) continue;
-    const sy = pad.axes[1] ?? 0;
-
-    for (const [rawIdx, name] of Object.entries(BUTTON_MAP) as [string, BtnName][]) {
-      const btn = pad.buttons[Number(rawIdx)];
-      if (!btn) continue;
-      const id = `${pad.index}-${name}`;
-      const state = gpState.get(id) ?? { pressed: false, lastAt: 0 };
-
-      const isPressed =
-        btn.pressed ||
-        (name === "up" && sy < -0.5) ||
-        (name === "down" && sy > 0.5);
-
-      const elapsed = now - state.lastAt;
-      const shouldFire =
-        isPressed &&
-        (!state.pressed || elapsed > (state.lastAt === 0 ? INITIAL_DELAY : REPEAT_INTERVAL));
-
-      if (shouldFire) {
-        switch (name) {
-          case "up":
-            focusedIdx.value = Math.max(focusedIdx.value - 1, 0);
-            scrollIntoView();
-            break;
-          case "down":
-            if (count > 0) focusedIdx.value = Math.min(focusedIdx.value + 1, count - 1);
-            scrollIntoView();
-            break;
-          case "a":
-            activateFocused();
-            break;
-          case "b":
-            goUp();
-            break;
-          case "lb":
-            jumpBookmark(-1);
-            break;
-          case "rb":
-            jumpBookmark(1);
-            break;
-        }
-        gpState.set(id, { pressed: true, lastAt: now });
-      } else if (!isPressed && state.pressed) {
-        gpState.set(id, { pressed: false, lastAt: 0 });
-      }
-    }
+  switch (action) {
+    case "up":
+      focusedIdx.value = Math.max(focusedIdx.value - 1, 0);
+      scrollIntoView();
+      break;
+    case "down":
+      if (count > 0) focusedIdx.value = Math.min(focusedIdx.value + 1, count - 1);
+      scrollIntoView();
+      break;
+    case "a":
+      activateFocused();
+      break;
+    case "b":
+      goUp();
+      break;
+    case "lb":
+      jumpBookmark(-1);
+      break;
+    case "rb":
+      jumpBookmark(1);
+      break;
   }
-  rafId = requestAnimationFrame(pollGamepads);
+}, { repeatDelay: 350, repeatInterval: 100 });
+
+// ── Controller detection ───────────────────────────────────────────────────
+
+const controllerConnected = ref(navigator.getGamepads().some((p) => p !== null));
+
+function onGamepadConnected() {
+  controllerConnected.value = true;
+}
+function onGamepadDisconnected() {
+  controllerConnected.value = navigator.getGamepads().some((p) => p !== null);
 }
 
 // ── Lifecycle ──────────────────────────────────────────────────────────────
@@ -231,7 +194,8 @@ function pollGamepads() {
 onMounted(async () => {
   // Capture phase so this runs before App.vue's handler
   window.addEventListener("keydown", onKeyDown, { capture: true });
-  rafId = requestAnimationFrame(pollGamepads);
+  window.addEventListener("gamepadconnected", onGamepadConnected);
+  window.addEventListener("gamepaddisconnected", onGamepadDisconnected);
 
   const bm = await invoke<Bookmark[]>("get_file_explorer_bookmarks");
   bookmarks.value = bm;
@@ -242,7 +206,8 @@ onMounted(async () => {
 
 onUnmounted(() => {
   window.removeEventListener("keydown", onKeyDown, { capture: true });
-  cancelAnimationFrame(rafId);
+  window.removeEventListener("gamepadconnected", onGamepadConnected);
+  window.removeEventListener("gamepaddisconnected", onGamepadDisconnected);
 });
 </script>
 
@@ -387,18 +352,23 @@ onUnmounted(() => {
       <!-- Footer -->
       <div class="flex items-center justify-between gap-4 px-4 py-2.5 border-t border-zinc-800 shrink-0">
 
-        <!-- Controller hints -->
-        <div class="flex items-center gap-3">
+        <!-- Controller hints (only shown when a controller is connected) -->
+        <div v-if="controllerConnected" class="flex items-center gap-3">
           <span class="flex items-center gap-1 text-[10px] text-zinc-600">
-            <kbd class="px-1 py-0.5 bg-zinc-900 border border-zinc-800 rounded text-zinc-500">↑↓</kbd> Navigate
+            <kbd class="px-1 py-0.5 bg-zinc-900 border border-zinc-700 rounded text-zinc-400">↕</kbd> Navigate
           </span>
           <span class="flex items-center gap-1 text-[10px] text-zinc-600">
-            <kbd class="px-1 py-0.5 bg-zinc-900 border border-zinc-800 rounded text-zinc-500">A</kbd> Select
+            <kbd class="px-1 py-0.5 bg-zinc-900 border border-zinc-700 rounded text-zinc-400">A</kbd> Open/Select
           </span>
           <span class="flex items-center gap-1 text-[10px] text-zinc-600">
-            <kbd class="px-1 py-0.5 bg-zinc-900 border border-zinc-800 rounded text-zinc-500">B</kbd> Back
+            <kbd class="px-1 py-0.5 bg-zinc-900 border border-zinc-700 rounded text-zinc-400">B</kbd> Back
+          </span>
+          <span class="flex items-center gap-1 text-[10px] text-zinc-600">
+            <kbd class="px-1 py-0.5 bg-zinc-900 border border-zinc-700 rounded text-zinc-400">LB</kbd>
+            <kbd class="px-1 py-0.5 bg-zinc-900 border border-zinc-700 rounded text-zinc-400">RB</kbd> Locations
           </span>
         </div>
+        <div v-else />
 
         <!-- Actions -->
         <div class="flex gap-2 shrink-0">
