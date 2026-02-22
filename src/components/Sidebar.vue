@@ -74,8 +74,8 @@ const emit = defineEmits<{
       <select
         :value="sortOption"
         @change="emit('update:sortOption', ($event.target as HTMLSelectElement).value as SortOption)"
-        class="w-full px-2 py-1.5 text-sm bg-zinc-900 text-white rounded-md border border-zinc-800
-               focus:outline-none focus:border-zinc-600 cursor-pointer transition-colors"
+        class="w-full px-2 py-1.5 text-sm bg-zinc-900 text-zinc-300 rounded-md border border-zinc-700
+               focus:outline-none hover:bg-zinc-800 hover:text-white cursor-pointer transition-colors"
       >
         <option value="alpha">A – Z</option>
         <option value="recentlyAdded">Recently Added</option>
