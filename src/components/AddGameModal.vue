@@ -1,7 +1,8 @@
 <script setup lang="ts">
-import { reactive, ref, onMounted, onUnmounted } from "vue";
+import { reactive, ref, computed, onMounted, onUnmounted } from "vue";
 import { invoke } from "@tauri-apps/api/core";
 import FileExplorer from "./FileExplorer.vue";
+import { useGamepad } from "../composables/useGamepad";
 import type { CustomGame } from "../types/game";
 
 const emit = defineEmits<{
@@ -169,85 +170,32 @@ function onKeyDown(e: KeyboardEvent) {
   }
 }
 
-// ── Gamepad loop ───────────────────────────────────────────────────────────
+// ── Gamepad navigation ─────────────────────────────────────────────────────
 
-type BtnName = "up" | "down" | "a" | "b";
+// Disable our gamepad handler while FileExplorer is open — it owns input then.
+// Ghost press prevention is automatic: when disabled, the composable still
+// tracks physical state so no buttons fire spuriously on re-enable.
+const gamepadEnabled = computed(() => explorerMode.value === null);
 
-const BUTTON_MAP: Record<number, BtnName> = {
-  0: "a",
-  1: "b",
-  12: "up",
-  13: "down",
-};
-
-interface BtnState { pressed: boolean; lastAt: number }
-
-const gpState = new Map<string, BtnState>();
-const INITIAL_DELAY = 400;
-const REPEAT_INTERVAL = 150;
-let rafId = 0;
-
-function pollGamepads() {
-  const pads = navigator.getGamepads();
-  const now = performance.now();
-
-  for (const pad of pads) {
-    if (!pad) continue;
-    const sy = pad.axes[1] ?? 0;
-
-    for (const [rawIdx, name] of Object.entries(BUTTON_MAP) as [string, BtnName][]) {
-      const btn = pad.buttons[Number(rawIdx)];
-      if (!btn) continue;
-
-      const id = `modal-${pad.index}-${name}`;
-      const state = gpState.get(id) ?? { pressed: false, lastAt: 0 };
-
-      const isPressed =
-        btn.pressed ||
-        (name === "up" && sy < -0.5) ||
-        (name === "down" && sy > 0.5);
-
-      if (explorerMode.value) {
-        // FileExplorer owns input - mirror full button state so that when it
-        // closes, any button still held is not treated as a fresh press.
-        gpState.set(id, { pressed: isPressed, lastAt: isPressed ? now : 0 });
-        continue;
-      }
-
-      const elapsed = now - state.lastAt;
-      const shouldFire =
-        isPressed &&
-        (!state.pressed || elapsed > (state.lastAt === 0 ? INITIAL_DELAY : REPEAT_INTERVAL));
-
-      if (shouldFire) {
-        if (formInputActive.value) {
-          if (name === "b") blurActiveInput();
-        } else {
-          switch (name) {
-            case "up":   navigateForm("up");   break;
-            case "down": navigateForm("down"); break;
-            case "a":    activateFormItem();   break;
-            case "b":    emit("close");        break;
-          }
-        }
-        gpState.set(id, { pressed: true, lastAt: now });
-      } else if (!isPressed && state.pressed) {
-        gpState.set(id, { pressed: false, lastAt: 0 });
-      }
-    }
+useGamepad((action) => {
+  if (formInputActive.value) {
+    if (action === "b") blurActiveInput();
+    return;
   }
-
-  rafId = requestAnimationFrame(pollGamepads);
-}
+  switch (action) {
+    case "up":   navigateForm("up");   break;
+    case "down": navigateForm("down"); break;
+    case "a":    activateFormItem();   break;
+    case "b":    emit("close");        break;
+  }
+}, { enabled: gamepadEnabled });
 
 onMounted(() => {
   window.addEventListener("keydown", onKeyDown);
-  rafId = requestAnimationFrame(pollGamepads);
 });
 
 onUnmounted(() => {
   window.removeEventListener("keydown", onKeyDown);
-  cancelAnimationFrame(rafId);
 });
 </script>
 

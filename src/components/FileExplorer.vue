@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { ref, computed, nextTick, onMounted, onUnmounted } from "vue";
 import { invoke } from "@tauri-apps/api/core";
+import { useGamepad } from "../composables/useGamepad";
 
 interface DirEntry {
   name: string;
@@ -142,25 +143,7 @@ function onKeyDown(e: KeyboardEvent) {
   }
 }
 
-// ── Gamepad loop ───────────────────────────────────────────────────────────
-
-type BtnName = "up" | "down" | "a" | "b" | "lb" | "rb";
-
-const BUTTON_MAP: Record<number, BtnName> = {
-  0: "a",
-  1: "b",
-  4: "lb",
-  5: "rb",
-  12: "up",
-  13: "down",
-};
-
-interface BtnState { pressed: boolean; lastAt: number }
-
-const gpState = new Map<string, BtnState>();
-const INITIAL_DELAY = 350;
-const REPEAT_INTERVAL = 100;
-let rafId = 0;
+// ── Gamepad navigation ─────────────────────────────────────────────────────
 
 function jumpBookmark(delta: 1 | -1) {
   const idx = bookmarks.value.findIndex((b) => b.path === currentPath.value);
@@ -169,88 +152,37 @@ function jumpBookmark(delta: 1 | -1) {
   if (bm) navigate(bm.path);
 }
 
-function pollGamepads() {
-  const pads = navigator.getGamepads();
-  const now = performance.now();
+useGamepad((action) => {
   const count = entries.value.length;
-
-  for (const pad of pads) {
-    if (!pad) continue;
-    const sy = pad.axes[1] ?? 0;
-
-    for (const [rawIdx, name] of Object.entries(BUTTON_MAP) as [string, BtnName][]) {
-      const btn = pad.buttons[Number(rawIdx)];
-      if (!btn) continue;
-      const id = `${pad.index}-${name}`;
-      const state = gpState.get(id) ?? { pressed: false, lastAt: 0 };
-
-      const isPressed =
-        btn.pressed ||
-        (name === "up" && sy < -0.5) ||
-        (name === "down" && sy > 0.5);
-
-      const elapsed = now - state.lastAt;
-      const shouldFire =
-        isPressed &&
-        (!state.pressed || elapsed > (state.lastAt === 0 ? INITIAL_DELAY : REPEAT_INTERVAL));
-
-      if (shouldFire) {
-        switch (name) {
-          case "up":
-            focusedIdx.value = Math.max(focusedIdx.value - 1, 0);
-            scrollIntoView();
-            break;
-          case "down":
-            if (count > 0) focusedIdx.value = Math.min(focusedIdx.value + 1, count - 1);
-            scrollIntoView();
-            break;
-          case "a":
-            activateFocused();
-            break;
-          case "b":
-            goUp();
-            break;
-          case "lb":
-            jumpBookmark(-1);
-            break;
-          case "rb":
-            jumpBookmark(1);
-            break;
-        }
-        gpState.set(id, { pressed: true, lastAt: now });
-      } else if (!isPressed && state.pressed) {
-        gpState.set(id, { pressed: false, lastAt: 0 });
-      }
-    }
+  switch (action) {
+    case "up":
+      focusedIdx.value = Math.max(focusedIdx.value - 1, 0);
+      scrollIntoView();
+      break;
+    case "down":
+      if (count > 0) focusedIdx.value = Math.min(focusedIdx.value + 1, count - 1);
+      scrollIntoView();
+      break;
+    case "a":
+      activateFocused();
+      break;
+    case "b":
+      goUp();
+      break;
+    case "lb":
+      jumpBookmark(-1);
+      break;
+    case "rb":
+      jumpBookmark(1);
+      break;
   }
-  rafId = requestAnimationFrame(pollGamepads);
-}
+}, { repeatDelay: 350, repeatInterval: 100 });
 
 // ── Lifecycle ──────────────────────────────────────────────────────────────
 
 onMounted(async () => {
-  // Pre-populate gpState with currently-held buttons so they don't ghost-fire
-  // immediately (e.g. the "A" press that opened this modal is still held).
-  const now = performance.now();
-  for (const pad of navigator.getGamepads()) {
-    if (!pad) continue;
-    const sy = pad.axes[1] ?? 0;
-    for (const [rawIdx, name] of Object.entries(BUTTON_MAP) as [string, BtnName][]) {
-      const btn = pad.buttons[Number(rawIdx)];
-      if (!btn) continue;
-      const isPressed =
-        btn.pressed ||
-        (name === "up" && sy < -0.5) ||
-        (name === "down" && sy > 0.5);
-      if (isPressed) {
-        gpState.set(`${pad.index}-${name}`, { pressed: true, lastAt: now });
-      }
-    }
-  }
-
   // Capture phase so this runs before App.vue's handler
   window.addEventListener("keydown", onKeyDown, { capture: true });
-  rafId = requestAnimationFrame(pollGamepads);
 
   const bm = await invoke<Bookmark[]>("get_file_explorer_bookmarks");
   bookmarks.value = bm;
@@ -261,7 +193,6 @@ onMounted(async () => {
 
 onUnmounted(() => {
   window.removeEventListener("keydown", onKeyDown, { capture: true });
-  cancelAnimationFrame(rafId);
 });
 </script>
 

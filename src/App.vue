@@ -5,6 +5,7 @@ import Sidebar from "./components/Sidebar.vue";
 import GameGrid from "./components/GameGrid.vue";
 import AddGameModal from "./components/AddGameModal.vue";
 import LaunchConfirmDialog from "./components/LaunchConfirmDialog.vue";
+import { useGamepad, type GamepadAction } from "./composables/useGamepad";
 import {
   fromSteamGame,
   fromCustomGame,
@@ -167,15 +168,15 @@ function activateSidebarItem() {
   }
 }
 
-function navigateSidebar(dir: "up" | "down" | "right" | "a" | "b") {
+function navigateSidebar(action: GamepadAction) {
   if (sidebarInputActive.value) {
-    if (dir === "b") {
+    if (action === "b") {
       sidebarRef.value?.blurActive();
       sidebarInputActive.value = false;
     }
     return;
   }
-  switch (dir) {
+  switch (action) {
     case "up":
       sidebarFocusedIndex.value = Math.max(sidebarFocusedIndex.value - 1, 0);
       break;
@@ -194,6 +195,40 @@ function navigateSidebar(dir: "up" | "down" | "right" | "a" | "b") {
   }
 }
 
+function navigateGrid(action: GamepadAction) {
+  const count = filteredGames.value.length;
+  const cols = Math.floor(
+    (document.getElementById("game-grid-area")?.clientWidth ?? 800) / 154
+  );
+  if (count > 0) {
+    switch (action) {
+      case "left":
+        if (focusedIndex.value % cols === 0) {
+          focusArea.value = "sidebar";
+        } else {
+          focusedIndex.value = Math.max(focusedIndex.value - 1, 0);
+        }
+        break;
+      case "right":
+        focusedIndex.value = Math.min(focusedIndex.value + 1, count - 1);
+        break;
+      case "down":
+        focusedIndex.value = Math.min(focusedIndex.value + cols, count - 1);
+        break;
+      case "up":
+        focusedIndex.value = Math.max(focusedIndex.value - cols, 0);
+        break;
+      case "a":
+        if (filteredGames.value[focusedIndex.value]) {
+          requestLaunch(filteredGames.value[focusedIndex.value]);
+        }
+        break;
+    }
+  } else if (action === "left") {
+    focusArea.value = "sidebar";
+  }
+}
+
 // ── Keyboard navigation ────────────────────────────────────────────────────
 
 function onKeyDown(e: KeyboardEvent) {
@@ -209,193 +244,51 @@ function onKeyDown(e: KeyboardEvent) {
       return;
     }
     switch (e.key) {
-      case "ArrowDown": e.preventDefault(); navigateSidebar("down"); break;
-      case "ArrowUp":   e.preventDefault(); navigateSidebar("up");   break;
-      case "ArrowRight":e.preventDefault(); navigateSidebar("right");break;
-      case "Enter":     e.preventDefault(); navigateSidebar("a");    break;
-      case "Escape":    navigateSidebar("b"); break;
+      case "ArrowDown":  e.preventDefault(); navigateSidebar("down");  break;
+      case "ArrowUp":    e.preventDefault(); navigateSidebar("up");    break;
+      case "ArrowRight": e.preventDefault(); navigateSidebar("right"); break;
+      case "Enter":      e.preventDefault(); navigateSidebar("a");     break;
+      case "Escape":     navigateSidebar("b"); break;
     }
     return;
   }
 
   // Grid navigation
-  const count = filteredGames.value.length;
-  const cols = Math.floor(
-    (document.getElementById("game-grid-area")?.clientWidth ?? 800) / 154
-  );
-
   switch (e.key) {
-    case "ArrowLeft":
-      e.preventDefault();
-      if (count === 0 || focusedIndex.value % cols === 0) {
-        focusArea.value = "sidebar";
-      } else {
-        focusedIndex.value = Math.max(focusedIndex.value - 1, 0);
-      }
-      break;
-    case "ArrowRight":
-      e.preventDefault();
-      if (count > 0) focusedIndex.value = Math.min(focusedIndex.value + 1, count - 1);
-      break;
-    case "ArrowDown":
-      e.preventDefault();
-      if (count > 0) focusedIndex.value = Math.min(focusedIndex.value + cols, count - 1);
-      break;
-    case "ArrowUp":
-      e.preventDefault();
-      if (count > 0) focusedIndex.value = Math.max(focusedIndex.value - cols, 0);
-      break;
-    case "Enter":
-      e.preventDefault();
-      if (filteredGames.value[focusedIndex.value]) {
-        requestLaunch(filteredGames.value[focusedIndex.value]);
-      }
-      break;
+    case "ArrowLeft":  e.preventDefault(); navigateGrid("left");  break;
+    case "ArrowRight": e.preventDefault(); navigateGrid("right"); break;
+    case "ArrowDown":  e.preventDefault(); navigateGrid("down");  break;
+    case "ArrowUp":    e.preventDefault(); navigateGrid("up");    break;
+    case "Enter":      e.preventDefault(); navigateGrid("a");     break;
   }
 }
 
 // ── Gamepad navigation ─────────────────────────────────────────────────────
 
-type GamepadButtonName = "right" | "left" | "down" | "up" | "a" | "b";
+const gamepadEnabled = computed(() => !showAddModal.value);
 
-interface ButtonState {
-  pressed: boolean;
-  lastAt: number;
-}
-
-const gamepadState = new Map<`${number}-${GamepadButtonName}`, ButtonState>();
-
-const INITIAL_REPEAT_DELAY = 400;
-const HELD_REPEAT_INTERVAL = 150;
-
-function gamepadButtonId(padIndex: number, btn: GamepadButtonName): `${number}-${GamepadButtonName}` {
-  return `${padIndex}-${btn}`;
-}
-
-const BUTTON_MAP: Record<number, GamepadButtonName> = {
-  0: "a",
-  1: "b",
-  12: "up",
-  13: "down",
-  14: "left",
-  15: "right",
-};
-
-let rafId = 0;
-
-function pollGamepads() {
-  const pads = navigator.getGamepads();
-  const now = performance.now();
-  const count = filteredGames.value.length;
-
-  for (const pad of pads) {
-    if (!pad) continue;
-
-    const cols = Math.floor(
-      (document.getElementById("game-grid-area")?.clientWidth ?? 800) / 154
-    );
-
-    for (const [btnIndex, name] of Object.entries(BUTTON_MAP) as [string, GamepadButtonName][]) {
-      const button = pad.buttons[Number(btnIndex)];
-      if (!button) continue;
-
-      const id = gamepadButtonId(pad.index, name);
-      const state = gamepadState.get(id) ?? { pressed: false, lastAt: 0 };
-
-      const stickX = pad.axes[0] ?? 0;
-      const stickY = pad.axes[1] ?? 0;
-
-      const isPressed =
-        button.pressed ||
-        (name === "right" && stickX > 0.5) ||
-        (name === "left" && stickX < -0.5) ||
-        (name === "down" && stickY > 0.5) ||
-        (name === "up" && stickY < -0.5);
-
-      const shouldFire =
-        isPressed &&
-        (!state.pressed
-          ? true
-          : now - state.lastAt > (state.lastAt === 0 ? INITIAL_REPEAT_DELAY : HELD_REPEAT_INTERVAL));
-
-      if (shouldFire) {
-        if (showAddModal.value) {
-          gamepadState.set(id, { pressed: true, lastAt: now });
-          continue;
-        }
-
-        if (pendingLaunch.value) {
-          if (name === "a") confirmLaunch();
-          else if (name === "b") cancelLaunch();
-          gamepadState.set(id, { pressed: true, lastAt: now });
-          continue;
-        }
-
-        if (focusArea.value === "sidebar") {
-          switch (name) {
-            case "up":    navigateSidebar("up");    break;
-            case "down":  navigateSidebar("down");  break;
-            case "right": navigateSidebar("right"); break;
-            case "a":     navigateSidebar("a");     break;
-            case "b":     navigateSidebar("b");     break;
-          }
-          gamepadState.set(id, { pressed: true, lastAt: now });
-          continue;
-        }
-
-        // Grid navigation
-        if (count > 0) {
-          switch (name) {
-            case "left":
-              if (focusedIndex.value % cols === 0) {
-                focusArea.value = "sidebar";
-              } else {
-                focusedIndex.value = Math.max(focusedIndex.value - 1, 0);
-              }
-              break;
-            case "right":
-              focusedIndex.value = Math.min(focusedIndex.value + 1, count - 1);
-              break;
-            case "down":
-              focusedIndex.value = Math.min(focusedIndex.value + cols, count - 1);
-              break;
-            case "up":
-              focusedIndex.value = Math.max(focusedIndex.value - cols, 0);
-              break;
-            case "a":
-              if (filteredGames.value[focusedIndex.value]) {
-                requestLaunch(filteredGames.value[focusedIndex.value]);
-              }
-              break;
-            case "b":
-              showAddModal.value = false;
-              break;
-          }
-        } else if (name === "left") {
-          // No games but still allow going to sidebar
-          focusArea.value = "sidebar";
-        }
-        gamepadState.set(id, { pressed: true, lastAt: now });
-      } else if (!isPressed && state.pressed) {
-        gamepadState.set(id, { pressed: false, lastAt: 0 });
-      }
-    }
+useGamepad((action) => {
+  if (pendingLaunch.value) {
+    if (action === "a") confirmLaunch();
+    else if (action === "b") cancelLaunch();
+    return;
   }
-
-  rafId = requestAnimationFrame(pollGamepads);
-}
+  if (focusArea.value === "sidebar") {
+    navigateSidebar(action);
+  } else {
+    navigateGrid(action);
+  }
+}, { enabled: gamepadEnabled });
 
 // ── Lifecycle ──────────────────────────────────────────────────────────────
 
 onMounted(() => {
   loadGames();
   window.addEventListener("keydown", onKeyDown);
-  rafId = requestAnimationFrame(pollGamepads);
 });
 
 onUnmounted(() => {
   window.removeEventListener("keydown", onKeyDown);
-  cancelAnimationFrame(rafId);
 });
 </script>
 
