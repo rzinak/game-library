@@ -178,11 +178,24 @@ useGamepad((action) => {
   }
 }, { repeatDelay: 350, repeatInterval: 100 });
 
+// ── Controller detection ───────────────────────────────────────────────────
+
+const controllerConnected = ref(navigator.getGamepads().some((p) => p !== null));
+
+function onGamepadConnected() {
+  controllerConnected.value = true;
+}
+function onGamepadDisconnected() {
+  controllerConnected.value = navigator.getGamepads().some((p) => p !== null);
+}
+
 // ── Lifecycle ──────────────────────────────────────────────────────────────
 
 onMounted(async () => {
   // Capture phase so this runs before App.vue's handler
   window.addEventListener("keydown", onKeyDown, { capture: true });
+  window.addEventListener("gamepadconnected", onGamepadConnected);
+  window.addEventListener("gamepaddisconnected", onGamepadDisconnected);
 
   const bm = await invoke<Bookmark[]>("get_file_explorer_bookmarks");
   bookmarks.value = bm;
@@ -193,6 +206,8 @@ onMounted(async () => {
 
 onUnmounted(() => {
   window.removeEventListener("keydown", onKeyDown, { capture: true });
+  window.removeEventListener("gamepadconnected", onGamepadConnected);
+  window.removeEventListener("gamepaddisconnected", onGamepadDisconnected);
 });
 </script>
 
@@ -337,18 +352,23 @@ onUnmounted(() => {
       <!-- Footer -->
       <div class="flex items-center justify-between gap-4 px-4 py-2.5 border-t border-zinc-800 shrink-0">
 
-        <!-- Controller hints -->
-        <div class="flex items-center gap-3">
+        <!-- Controller hints (only shown when a controller is connected) -->
+        <div v-if="controllerConnected" class="flex items-center gap-3">
           <span class="flex items-center gap-1 text-[10px] text-zinc-600">
-            <kbd class="px-1 py-0.5 bg-zinc-900 border border-zinc-800 rounded text-zinc-500">↑↓</kbd> Navigate
+            <kbd class="px-1 py-0.5 bg-zinc-900 border border-zinc-700 rounded text-zinc-400">↕</kbd> Navigate
           </span>
           <span class="flex items-center gap-1 text-[10px] text-zinc-600">
-            <kbd class="px-1 py-0.5 bg-zinc-900 border border-zinc-800 rounded text-zinc-500">A</kbd> Select
+            <kbd class="px-1 py-0.5 bg-zinc-900 border border-zinc-700 rounded text-zinc-400">A</kbd> Open/Select
           </span>
           <span class="flex items-center gap-1 text-[10px] text-zinc-600">
-            <kbd class="px-1 py-0.5 bg-zinc-900 border border-zinc-800 rounded text-zinc-500">B</kbd> Back
+            <kbd class="px-1 py-0.5 bg-zinc-900 border border-zinc-700 rounded text-zinc-400">B</kbd> Back
+          </span>
+          <span class="flex items-center gap-1 text-[10px] text-zinc-600">
+            <kbd class="px-1 py-0.5 bg-zinc-900 border border-zinc-700 rounded text-zinc-400">LB</kbd>
+            <kbd class="px-1 py-0.5 bg-zinc-900 border border-zinc-700 rounded text-zinc-400">RB</kbd> Locations
           </span>
         </div>
+        <div v-else />
 
         <!-- Actions -->
         <div class="flex gap-2 shrink-0">
