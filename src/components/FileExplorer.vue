@@ -371,13 +371,13 @@ onUnmounted(() => {
               <!-- Badges -->
               <span
                 v-if="entry.is_app_bundle"
-                class="shrink-0 text-[10px] px-1.5 py-0.5 rounded-sm bg-zinc-800 text-zinc-500"
-                :class="i === focusedIdx ? 'bg-zinc-700 text-zinc-300' : ''"
+                class="shrink-0 text-[10px] px-1.5 py-0.5 rounded-sm bg-sky-900/60 text-sky-400"
+                :class="i === focusedIdx ? 'bg-sky-800/70 text-sky-300' : ''"
               >.app</span>
               <span
                 v-else-if="entry.is_executable"
-                class="shrink-0 text-[10px] px-1.5 py-0.5 rounded-sm bg-zinc-800 text-zinc-500"
-                :class="i === focusedIdx ? 'bg-zinc-700 text-zinc-300' : ''"
+                class="shrink-0 text-[10px] px-1.5 py-0.5 rounded-sm bg-emerald-900/60 text-emerald-400"
+                :class="i === focusedIdx ? 'bg-emerald-800/70 text-emerald-300' : ''"
               >exec</span>
             </div>
           </div>
