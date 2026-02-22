@@ -267,14 +267,14 @@ function onKeyDown(e: KeyboardEvent) {
 
 // ── Gamepad navigation ─────────────────────────────────────────────────────
 
-const gamepadEnabled = computed(() => !showAddModal.value && !searchKeyboardOpen.value);
+const gamepadEnabled = computed(
+  () =>
+    !showAddModal.value &&
+    !searchKeyboardOpen.value &&
+    pendingLaunch.value === null
+);
 
 useGamepad((action) => {
-  if (pendingLaunch.value) {
-    if (action === "a") confirmLaunch();
-    else if (action === "b") cancelLaunch();
-    return;
-  }
   if (focusArea.value === "sidebar") {
     navigateSidebar(action);
   } else {

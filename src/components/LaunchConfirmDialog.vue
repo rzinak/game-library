@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { onMounted, onUnmounted } from "vue";
 import type { Game } from "../types/game";
+import { useGamepad } from "../composables/useGamepad";
 
 defineProps<{ game: Game }>();
 
@@ -22,6 +23,11 @@ function onKeyDown(e: KeyboardEvent) {
 function onBackdropClick(e: MouseEvent) {
   if (e.target === e.currentTarget) emit("cancel");
 }
+
+useGamepad((action) => {
+  if (action === "a") emit("confirm");
+  else if (action === "b") emit("cancel");
+});
 
 onMounted(() => window.addEventListener("keydown", onKeyDown));
 onUnmounted(() => window.removeEventListener("keydown", onKeyDown));
