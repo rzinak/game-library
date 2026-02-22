@@ -131,10 +131,13 @@ pub fn discover_games_at(steam_root: &Path) -> Result<Vec<SteamGame>, SteamError
         return Err(SteamError::NotFound);
     }
     let library_paths = find_library_paths(steam_root)?;
-    let games = library_paths
+    let mut seen = std::collections::HashSet::new();
+    let games: Vec<SteamGame> = library_paths
         .iter()
         .flat_map(|dir| read_games_from_library(dir))
+        .filter(|g| seen.insert(g.app_id))
         .collect();
+
     Ok(games)
 }
 
