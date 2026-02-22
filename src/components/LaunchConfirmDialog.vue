@@ -1,9 +1,10 @@
 <script setup lang="ts">
 import { onMounted, onUnmounted } from "vue";
+import { info } from "@tauri-apps/plugin-log";
 import type { Game } from "../types/game";
 import { useGamepad } from "../composables/useGamepad";
 
-defineProps<{ game: Game }>();
+const props = defineProps<{ game: Game }>();
 
 const emit = defineEmits<{
   confirm: [];
@@ -13,15 +14,20 @@ const emit = defineEmits<{
 function onKeyDown(e: KeyboardEvent) {
   if (e.key === "Enter") {
     e.preventDefault();
+    info(`Launch confirmed via keyboard: ${props.game.title}`);
     emit("confirm");
   } else if (e.key === "Escape") {
     e.preventDefault();
+    info(`Launch cancelled via keyboard: ${props.game.title}`);
     emit("cancel");
   }
 }
 
 function onBackdropClick(e: MouseEvent) {
-  if (e.target === e.currentTarget) emit("cancel");
+  if (e.target === e.currentTarget) {
+    info(`Launch cancelled via backdrop click: ${props.game.title}`);
+    emit("cancel");
+  }
 }
 
 useGamepad((action) => {
@@ -68,7 +74,7 @@ onUnmounted(() => window.removeEventListener("keydown", onKeyDown));
       <!-- Actions -->
       <div class="flex gap-2 w-full">
         <button
-          @click="emit('cancel')"
+          @click="info(`Launch cancelled via button: ${game.title}`); emit('cancel')"
           class="flex-1 py-1.5 text-sm rounded-md border border-zinc-700
                  text-zinc-400 hover:bg-zinc-800 hover:text-white transition-colors"
         >
@@ -76,7 +82,7 @@ onUnmounted(() => window.removeEventListener("keydown", onKeyDown));
         </button>
         <button
           autofocus
-          @click="emit('confirm')"
+          @click="info(`Launch confirmed via button: ${game.title}`); emit('confirm')"
           class="flex-1 py-1.5 text-sm font-medium rounded-md
                  bg-white text-zinc-950 hover:bg-zinc-100 transition-colors"
         >
