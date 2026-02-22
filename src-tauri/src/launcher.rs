@@ -49,7 +49,6 @@ pub fn launch(target: &LaunchTarget) -> Result<(), LaunchError> {
 /// Opens the Steam URI for the given app ID using the OS default handler.
 pub fn launch_steam(app_id: u32) -> Result<(), LaunchError> {
     let uri = format!("steam://run/{}", app_id);
-    log::info!("Launching Steam game: app_id={} uri={}", app_id, uri);
     open_uri(&uri)
 }
 
@@ -61,18 +60,15 @@ pub fn launch_steam(app_id: u32) -> Result<(), LaunchError> {
 /// is spawned directly and `Some(child)` is returned.
 pub fn spawn_executable(path: &str) -> Result<Option<std::process::Child>, LaunchError> {
     if !Path::new(path).exists() {
-        log::warn!("Executable not found: {}", path);
         return Err(LaunchError::ExecutableNotFound(path.to_string()));
     }
 
     #[cfg(target_os = "macos")]
     if Path::new(path).is_dir() && path.ends_with(".app") {
-        log::info!("Launching macOS app bundle via open: {}", path);
         Command::new("open").arg(path).spawn()?;
         return Ok(None);
     }
 
-    log::info!("Spawning executable: {}", path);
     Ok(Some(Command::new(path).spawn()?))
 }
 
@@ -218,10 +214,7 @@ mod tests {
     #[cfg(target_os = "windows")]
     #[test]
     fn process_name_from_windows_exe() {
-        assert_eq!(
-            resolve_process_name("C:\\Games\\aseprite.exe"),
-            "aseprite.exe"
-        );
+        assert_eq!(resolve_process_name("C:\\Games\\aseprite.exe"), "aseprite.exe");
     }
 
     #[cfg(target_os = "macos")]

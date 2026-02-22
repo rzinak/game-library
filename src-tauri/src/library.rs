@@ -1,5 +1,5 @@
-use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
+use serde::{Deserialize, Serialize};
 use thiserror::Error;
 use uuid::Uuid;
 
@@ -54,11 +54,8 @@ impl Library {
         let path = path.into();
         let games = if path.exists() {
             let contents = std::fs::read_to_string(&path)?;
-            let games: Vec<CustomGame> = serde_json::from_str(&contents)?;
-            log::info!("Library loaded: {} game(s) from {:?}", games.len(), path);
-            games
+            serde_json::from_str(&contents)?
         } else {
-            log::info!("No library file found at {:?}, starting empty", path);
             Vec::new()
         };
         Ok(Self { path, games })
@@ -69,7 +66,6 @@ impl Library {
     }
 
     pub fn add(&mut self, game: CustomGame) -> Result<&CustomGame, LibraryError> {
-        log::info!("Adding game to library: {:?} (id={})", game.title, game.id);
         self.games.push(game);
         self.persist()?;
         Ok(self.games.last().unwrap())
@@ -82,7 +78,6 @@ impl Library {
             .position(|g| g.id == id)
             .ok_or_else(|| LibraryError::NotFound(id.to_string()))?;
         let removed = self.games.remove(index);
-        log::info!("Removed game from library: {:?} (id={})", removed.title, removed.id);
         self.persist()?;
         Ok(removed)
     }
