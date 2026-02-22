@@ -113,17 +113,19 @@ function requestLaunch(game: Game) {
   pendingLaunch.value = game;
 }
 
-function confirmLaunch() {
+async function confirmLaunch() {
   const game = pendingLaunch.value;
   if (!game) return;
   pendingLaunch.value = null;
-  // Fire-and-forget: close the dialog immediately so the controller can't
-  // re-trigger it, and surface any error via the notification banner.
-  invoke("launch_game", {
-    key: game.key,
-    appId: game.appId ?? null,
-    executable: game.executable ?? null,
-  }).catch((e) => showNotification(String(e)));
+  try {
+    await invoke("launch_game", {
+      key: game.key,
+      appId: game.appId ?? null,
+      executable: game.executable ?? null,
+    });
+  } catch (e) {
+    showNotification(String(e));
+  }
 }
 
 function cancelLaunch() {
