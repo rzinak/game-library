@@ -2,6 +2,7 @@
 import { reactive, ref, computed, onMounted, onUnmounted } from "vue";
 import { invoke } from "@tauri-apps/api/core";
 import FileExplorer from "./FileExplorer.vue";
+import VirtualKeyboard from "./VirtualKeyboard.vue";
 import { useGamepad } from "../composables/useGamepad";
 import type { CustomGame } from "../types/game";
 
@@ -21,6 +22,7 @@ const form = reactive({
 });
 
 const explorerMode = ref<"executable" | "cover" | null>(null);
+const virtualKeyboardTarget = ref<"title" | "executable" | "coverImage" | "tags" | "notes" | null>(null);
 const mouseDownOnOverlay = ref(false);
 
 async function submit() {
@@ -172,10 +174,14 @@ function onKeyDown(e: KeyboardEvent) {
 
 // ── Gamepad navigation ─────────────────────────────────────────────────────
 
-// Disable our gamepad handler while FileExplorer is open — it owns input then.
-// Ghost press prevention is automatic: when disabled, the composable still
-// tracks physical state so no buttons fire spuriously on re-enable.
-const gamepadEnabled = computed(() => explorerMode.value === null);
+// Disable our gamepad handler while FileExplorer or VirtualKeyboard is open —
+// they own input then. Ghost press prevention is automatic: when disabled, the
+// composable still tracks physical state so no buttons fire spuriously on re-enable.
+const gamepadEnabled = computed(
+  () => explorerMode.value === null && virtualKeyboardTarget.value === null
+);
+
+const TEXT_INPUTS = new Set(["title", "executable", "coverImage", "tags", "notes"]);
 
 useGamepad((action) => {
   if (formInputActive.value) {
@@ -185,10 +191,22 @@ useGamepad((action) => {
   switch (action) {
     case "up":   navigateForm("up");   break;
     case "down": navigateForm("down"); break;
-    case "a":    activateFormItem();   break;
+    case "a": {
+      const focused = FORM_ITEMS[formFocusedIndex.value];
+      if (TEXT_INPUTS.has(focused)) {
+        virtualKeyboardTarget.value = focused as typeof virtualKeyboardTarget.value;
+      } else {
+        activateFormItem();
+      }
+      break;
+    }
     case "b":    emit("close");        break;
   }
 }, { enabled: gamepadEnabled });
+
+function onVirtualKeyboardConfirm() {
+  virtualKeyboardTarget.value = null;
+}
 
 onMounted(() => {
   window.addEventListener("keydown", onKeyDown);
@@ -384,5 +402,12 @@ onUnmounted(() => {
     title="Select Cover Image"
     @select="onExplorerSelect"
     @cancel="explorerMode = null"
+  />
+
+  <VirtualKeyboard
+    v-if="virtualKeyboardTarget !== null"
+    :model-value="form[virtualKeyboardTarget!]"
+    @update:model-value="form[virtualKeyboardTarget!] = $event"
+    @confirm="onVirtualKeyboardConfirm"
   />
 </template>

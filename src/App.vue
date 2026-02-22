@@ -5,6 +5,7 @@ import Sidebar from "./components/Sidebar.vue";
 import GameGrid from "./components/GameGrid.vue";
 import AddGameModal from "./components/AddGameModal.vue";
 import LaunchConfirmDialog from "./components/LaunchConfirmDialog.vue";
+import VirtualKeyboard from "./components/VirtualKeyboard.vue";
 import { useGamepad, type GamepadAction } from "./composables/useGamepad";
 import {
   fromSteamGame,
@@ -43,6 +44,7 @@ const focusArea = ref<"grid" | "sidebar">("grid");
 const sidebarFocusedIndex = ref(0);
 const sidebarInputActive = ref(false);
 const sidebarRef = ref<InstanceType<typeof Sidebar>>();
+const searchKeyboardOpen = ref(false);
 
 // Matches the visual top-to-bottom order in Sidebar.vue
 const SIDEBAR_ITEMS = [
@@ -143,8 +145,7 @@ function activateSidebarItem() {
   const item: SidebarItem = SIDEBAR_ITEMS[sidebarFocusedIndex.value];
   switch (item) {
     case "search":
-      sidebarInputActive.value = true;
-      sidebarRef.value?.focusSearch();
+      searchKeyboardOpen.value = true;
       break;
     case "filter-all":
       platformFilter.value = "all";
@@ -265,7 +266,7 @@ function onKeyDown(e: KeyboardEvent) {
 
 // ── Gamepad navigation ─────────────────────────────────────────────────────
 
-const gamepadEnabled = computed(() => !showAddModal.value);
+const gamepadEnabled = computed(() => !showAddModal.value && !searchKeyboardOpen.value);
 
 useGamepad((action) => {
   if (pendingLaunch.value) {
@@ -378,6 +379,13 @@ onUnmounted(() => {
       :game="pendingLaunch"
       @confirm="confirmLaunch"
       @cancel="cancelLaunch"
+    />
+
+    <VirtualKeyboard
+      v-if="searchKeyboardOpen"
+      :model-value="search"
+      @update:model-value="search = $event; focusedIndex = 0"
+      @confirm="searchKeyboardOpen = false"
     />
   </div>
 </template>
