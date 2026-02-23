@@ -11,8 +11,10 @@ import { useGamepad, type GamepadAction } from "./composables/useGamepad";
 import {
   fromSteamGame,
   fromCustomGame,
+  fromEpicGame,
   type Game,
   type CustomGame,
+  type EpicGame,
   type SteamGame,
   type PlatformFilter,
   type SortOption,
@@ -52,6 +54,7 @@ const SIDEBAR_ITEMS = [
   "search",
   "filter-all",
   "filter-steam",
+  "filter-epic",
   "filter-custom",
   "sort",
   "add-game",
@@ -65,19 +68,24 @@ async function loadGames() {
   loadError.value = "";
   info("Loading game library...");
   try {
-    const [steamGames, customGames] = await Promise.all([
+    const [steamGames, epicGames, customGames] = await Promise.all([
       invoke<SteamGame[]>("get_steam_games").catch((e) => {
         warn(`Steam game discovery failed: ${e}`);
         return [] as SteamGame[];
+      }),
+      invoke<EpicGame[]>("get_epic_games").catch((e) => {
+        warn(`Epic game discovery failed: ${e}`);
+        return [] as EpicGame[];
       }),
       invoke<CustomGame[]>("get_custom_games"),
     ]);
 
     allGames.value = [
       ...steamGames.map(fromSteamGame),
+      ...epicGames.map(fromEpicGame),
       ...customGames.map(fromCustomGame),
     ];
-    info(`Library loaded: ${steamGames.length} Steam game(s), ${customGames.length} custom game(s)`);
+    info(`Library loaded: ${steamGames.length} Steam game(s), ${epicGames.length} Epic game(s), ${customGames.length} custom game(s)`);
   } catch (e) {
     logError(`Failed to load library: ${e}`);
     loadError.value = String(e);
@@ -89,6 +97,7 @@ async function loadGames() {
 // ── Filtered & sorted view ─────────────────────────────────────────────────
 
 const steamCount = computed(() => allGames.value.filter((g) => g.platform === "steam").length);
+const epicCount = computed(() => allGames.value.filter((g) => g.platform === "epic").length);
 const customCount = computed(() => allGames.value.filter((g) => g.platform === "custom").length);
 
 const filteredGames = computed<Game[]>(() => {
@@ -131,6 +140,7 @@ async function confirmLaunch() {
       key: game.key,
       appId: game.appId ?? null,
       executable: game.executable ?? null,
+      epicLaunchUri: game.epicLaunchUri ?? null,
     });
   } catch (e) {
     logError(`Failed to launch "${game.title}": ${e}`);
@@ -167,6 +177,10 @@ function activateSidebarItem() {
       break;
     case "filter-steam":
       platformFilter.value = "steam";
+      focusedIndex.value = 0;
+      break;
+    case "filter-epic":
+      platformFilter.value = "epic";
       focusedIndex.value = 0;
       break;
     case "filter-custom":
@@ -317,6 +331,7 @@ onUnmounted(() => {
       :sort-option="sortOption"
       :total-games="allGames.length"
       :steam-count="steamCount"
+      :epic-count="epicCount"
       :custom-count="customCount"
       :sidebar-focused-index="focusArea === 'sidebar' ? sidebarFocusedIndex : -1"
       @update:search="search = $event; focusedIndex = 0"
@@ -369,7 +384,7 @@ onUnmounted(() => {
       <template v-else>
         <div class="flex items-center justify-between mb-6">
           <h1 class="text-sm font-medium text-zinc-400">
-            {{ platformFilter === "all" ? "All Games" : platformFilter === "steam" ? "Steam" : "Custom" }}
+            {{ platformFilter === "all" ? "All Games" : platformFilter === "steam" ? "Steam" : platformFilter === "epic" ? "Epic" : "Custom" }}
           </h1>
           <span class="text-xs text-zinc-600">{{ filteredGames.length }} game{{ filteredGames.length !== 1 ? "s" : "" }}</span>
         </div>

@@ -1,8 +1,11 @@
+mod epic;
 mod fs_explorer;
 mod launcher;
 mod library;
 mod steam;
 
+use epic::EpicGame;
+use launcher::LaunchTarget;
 use library::{CustomGame, Library};
 use std::path::PathBuf;
 use std::sync::Mutex;
@@ -37,6 +40,20 @@ fn get_steam_games() -> Result<Vec<SteamGame>, String> {
         }
         Err(e) => {
             log::warn!("Steam discovery failed: {}", e);
+            Err(e.to_string())
+        }
+    }
+}
+
+#[tauri::command]
+fn get_epic_games() -> Result<Vec<EpicGame>, String> {
+    match epic::discover_games() {
+        Ok(games) => {
+            log::info!("Epic discovery: found {} games", games.len());
+            Ok(games)
+        }
+        Err(e) => {
+            log::warn!("Epic discovery failed: {}", e);
             Err(e.to_string())
         }
     }
@@ -99,31 +116,28 @@ fn launch_game(
     _key: String,
     app_id: Option<u32>,
     executable: Option<String>,
+    epic_launch_uri: Option<String>,
 ) -> Result<(), String> {
     log::info!(
-        "launch_game: key={:?} app_id={:?} executable={:?}",
+        "launch_game: key={:?} app_id={:?} executable={:?} epic={:?}",
         _key,
         app_id,
-        executable
+        executable,
+        epic_launch_uri,
     );
-    match (app_id, executable) {
-        (Some(id), _) => launcher::launch_steam(id).map_err(|e| {
-            log::error!("Steam launch failed for app_id={}: {}", id, e);
-            e.to_string()
-        }),
-        (None, Some(path)) => {
-            launcher::spawn_executable(&path)
-                .map_err(|e| {
-                    log::error!("Executable launch failed for {:?}: {}", path, e);
-                    e.to_string()
-                })?;
-            Ok(())
+    let target = match (app_id, epic_launch_uri, executable) {
+        (Some(id), _, _) => LaunchTarget::steam(id),
+        (_, Some(uri), _) => LaunchTarget::epic_game(uri),
+        (_, _, Some(path)) => LaunchTarget::executable(path),
+        (None, None, None) => {
+            log::warn!("launch_game called with no launch target");
+            return Err("No launch target specified".to_string());
         }
-        (None, None) => {
-            log::warn!("launch_game called with no app_id or executable");
-            Err("Either app_id or executable must be provided".to_string())
-        }
-    }
+    };
+    launcher::launch(&target).map_err(|e| {
+        log::error!("Launch failed for {:?}: {}", _key, e);
+        e.to_string()
+    })
 }
 
 // ---------------------------------------------------------------------------
@@ -170,6 +184,7 @@ pub fn run() {
         })
         .invoke_handler(tauri::generate_handler![
             get_steam_games,
+            get_epic_games,
             get_custom_games,
             add_game,
             remove_game,

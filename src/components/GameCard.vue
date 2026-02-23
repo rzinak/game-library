@@ -59,7 +59,7 @@ function onKeyDown(e: KeyboardEvent) {
       <span
         class="self-start text-[10px] font-medium px-1.5 py-0.5 rounded-sm text-zinc-400 bg-zinc-800"
       >
-        {{ game.platform === "steam" ? "Steam" : "Custom" }}
+        {{ game.platform === "steam" ? "Steam" : game.platform === "epic" ? "Epic" : "Custom" }}
       </span>
     </div>
 
