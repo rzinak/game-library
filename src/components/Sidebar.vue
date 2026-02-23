@@ -8,6 +8,7 @@ defineProps<{
   sortOption: SortOption;
   totalGames: number;
   steamCount: number;
+  epicCount: number;
   customCount: number;
   sidebarFocusedIndex: number; // -1 = sidebar not focused
 }>();
@@ -77,6 +78,7 @@ defineExpose({ focusSearch, focusSort, blurActive });
         v-for="(opt, idx) in ([
           { value: 'all',    label: 'All',    count: totalGames },
           { value: 'steam',  label: 'Steam',  count: steamCount },
+          { value: 'epic',   label: 'Epic',   count: epicCount },
           { value: 'custom', label: 'Custom', count: customCount },
         ] as const)"
         :key="opt.value"
@@ -99,7 +101,7 @@ defineExpose({ focusSearch, focusSort, blurActive });
       <p class="text-xs text-zinc-500 px-2 font-medium">Sort by</p>
       <div
         class="rounded-md"
-        :class="sidebarFocusedIndex === 4 ? 'ring-2 ring-zinc-500' : ''"
+        :class="sidebarFocusedIndex === 5 ? 'ring-2 ring-zinc-500' : ''"
       >
         <select
           ref="sortSelectRef"
@@ -124,7 +126,7 @@ defineExpose({ focusSearch, focusSort, blurActive });
       class="flex items-center justify-center gap-1.5 w-full px-3 py-2 rounded-md
              border border-zinc-700 text-zinc-300 text-sm font-medium
              hover:bg-zinc-800 hover:text-white transition-colors"
-      :class="sidebarFocusedIndex === 5 ? 'ring-2 ring-zinc-500' : ''"
+      :class="sidebarFocusedIndex === 6 ? 'ring-2 ring-zinc-500' : ''"
     >
       <svg xmlns="http://www.w3.org/2000/svg" class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" />

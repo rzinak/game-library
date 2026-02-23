@@ -22,7 +22,7 @@ A Tauri desktop application that acts as a personal game library manager, allowi
 - Sorting options: alphabetical, recently added, playtime
 
 ## Tech Stack
-- **Frontend:** Tauri + React (TypeScript)
+- **Frontend:** Tauri + Vue 3 (TypeScript)
 - **Backend (Rust):** Tauri commands for file system access, Steam VDF parsing, and process spawning
 - **Styling:** Tailwind CSS for the library UI
 
@@ -33,22 +33,32 @@ A Tauri desktop application that acts as a personal game library manager, allowi
 - Use Java records for DTOs (when applicable to any JVM tooling in the project)
 - Keep methods that handle data inside the relevant class (high cohesion)
 
-## Project Structure (planned)
+## Project Structure (actual)
 ```
 game-library/
-├── src/                  # React frontend
+├── src/                  # Vue 3 frontend
 │   ├── components/
-│   │   ├── GameCard.tsx
-│   │   ├── GameGrid.tsx
-│   │   └── Sidebar.tsx
-│   └── pages/
-│       └── Library.tsx
+│   │   ├── GameCard.vue
+│   │   ├── GameGrid.vue
+│   │   ├── Sidebar.vue
+│   │   ├── AddGameModal.vue
+│   │   ├── LaunchConfirmDialog.vue
+│   │   ├── FileExplorer.vue
+│   │   └── VirtualKeyboard.vue
+│   ├── composables/
+│   │   └── useGamepad.ts
+│   ├── types/
+│   │   └── game.ts
+│   ├── App.vue
+│   └── main.ts
 ├── src-tauri/            # Rust backend
 │   ├── src/
 │   │   ├── main.rs
+│   │   ├── lib.rs        # Tauri commands and app state
 │   │   ├── steam.rs      # Steam VDF parsing & game discovery
-│   │   ├── library.rs    # Non-steam game management
-│   │   └── launcher.rs   # Game process spawning
+│   │   ├── library.rs    # Custom game management (JSON persistence)
+│   │   ├── launcher.rs   # Game process spawning and URI dispatch
+│   │   └── fs_explorer.rs # File system utilities
 │   └── tauri.conf.json
 └── CLAUDE.md
 ```
@@ -66,3 +76,10 @@ game-library/
 - **Gamepad (Controller):** D-pad / left stick to move focus between game cards, A/Cross to launch, B/Circle to go back, trigger or bumper shortcuts for filtering
 - Controller input handled via the frontend (e.g., `gamepad` browser API available in Tauri's WebView)
 - Visual focus indicator must be clearly visible for controller navigation (big cursor / highlight on focused card)
+
+## Active Technologies
+- Rust (backend), TypeScript 5 + Vue 3 (frontend) + `serde_json` (already in Cargo.toml), `thiserror` (already used), (001-epic-games-integration)
+- None — Epic manifests are read-only; no new persistence layer needed (001-epic-games-integration)
+
+## Recent Changes
+- 001-epic-games-integration: Added Rust (backend), TypeScript 5 + Vue 3 (frontend) + `serde_json` (already in Cargo.toml), `thiserror` (already used),
