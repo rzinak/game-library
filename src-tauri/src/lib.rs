@@ -39,9 +39,10 @@ fn get_steam_games() -> Result<Vec<SteamGame>, String> {
     let shortcuts: Vec<SteamGame> = steam::discover_shortcut_games(&steam_root)
         .into_iter()
         .map(|s| SteamGame {
-            app_id: s.app_id,
+            app_id: s.app_id as u64,
             name: s.app_name,
             install_dir: PathBuf::from(&s.exe),
+            is_shortcut: true,
         })
         .collect();
 
@@ -135,18 +136,27 @@ fn launch_game(
     _state: State<AppState>,
     _key: String,
     app_id: Option<u32>,
+    is_shortcut: Option<bool>,
     executable: Option<String>,
     epic_launch_uri: Option<String>,
 ) -> Result<(), String> {
     log::info!(
-        "launch_game: key={:?} app_id={:?} executable={:?} epic={:?}",
+        "launch_game: key={:?} app_id={:?} is_shortcut={:?} executable={:?} epic={:?}",
         _key,
         app_id,
+        is_shortcut,
         executable,
         epic_launch_uri,
     );
     let target = match (app_id, epic_launch_uri, executable) {
-        (Some(id), _, _) => LaunchTarget::steam(id),
+        // (Some(id), _, _) => LaunchTarget::steam(id),
+        (Some(id), _, _) => {
+            if is_shortcut.unwrap_or(false) {
+                LaunchTarget::steam_shortcut(id)
+            } else {
+                LaunchTarget::steam(id)
+            }
+        }
         (_, Some(uri), _) => LaunchTarget::epic_game(uri),
         (_, _, Some(path)) => LaunchTarget::executable(path),
         (None, None, None) => {

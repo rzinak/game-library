@@ -20,20 +20,34 @@ pub struct ShortcutGame {
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct SteamGame {
-    pub app_id: u32,
+    pub app_id: u64,
     pub name: String,
     pub install_dir: PathBuf,
+    // Shortcuts are non-steam games or applications we've manually added
+    // to Steam via Games > Add a Non-Steam Game. Steam assigns them a local
+    // CRC-derived ID and tracks them in a binary file called shortcuts.vdf.
+    // They don't have a real Steam App ID, so they launch via steam://rungameid/
+    // instead of the usual steam://run/ URI.
+    //
+    // CRC: https://en.wikipedia.org/wiki/Cyclic_redundancy_check
+    // Steam repurposes it here as a way to generate a unique ID for non-Steam games.
+    // It takes the game's exe path and name, runs them through the CRC algorithm,
+    // and the resulting number becomes the game's local ID. It's deterministic
+    // (same exe + name always produces the same ID), but it's purely local,
+    // Valve's servers have no knowledge of it, which is why these games can't use
+    // the normal Steam store infrastructure.
+    pub is_shortcut: bool,
 }
 
-impl ShortcutGame {
-    pub fn launch_uri(&self) -> String {
-        format!("steam://rungameid/{}", self.app_id)
-    }
-}
-
+#[allow(dead_code)]
 impl SteamGame {
     pub fn launch_uri(&self) -> String {
-        format!("steam://run/{}", self.app_id)
+        if self.is_shortcut {
+            let full_id = (self.app_id << 32) | 0x02000000u64;
+            format!("steam://rungameid/{}", full_id)
+        } else {
+            format!("steam://run/{}", self.app_id)
+        }
     }
 }
 
@@ -67,9 +81,6 @@ pub fn parse_shortcuts_vdf(data: &[u8]) -> Vec<ShortcutGame> {
     const TYPE_INT32: u8 = 0x02; // 4-byte little-endian int value
     const END_MAP: u8 = 0x08; // end of map/object
 
-    // Skip the outer "shortcuts" key header: \x00 + "shortcuts" + \x00
-    // We just scan for each entry map
-
     fn read_cstring(data: &[u8], pos: &mut usize) -> String {
         let start = *pos;
         while *pos < data.len() && data[*pos] != 0x00 {
@@ -96,7 +107,6 @@ pub fn parse_shortcuts_vdf(data: &[u8]) -> Vec<ShortcutGame> {
         }
         i += 1;
 
-        // Read the map key (entry index like "0", "1", ...)
         let key = read_cstring(data, &mut i);
         // Only process numeric keys (the per-game entries)
         if key
@@ -109,7 +119,6 @@ pub fn parse_shortcuts_vdf(data: &[u8]) -> Vec<ShortcutGame> {
             let mut app_name = String::new();
             let mut exe = String::new();
 
-            // Parse fields until end-of-map
             while i < data.len() && data[i] != END_MAP {
                 let field_type = data[i];
                 i += 1;
@@ -132,9 +141,38 @@ pub fn parse_shortcuts_vdf(data: &[u8]) -> Vec<ShortcutGame> {
                     }
                     END_MAP => break,
                     _ => {
-                        // Unknown type — skip by scanning to next null or marker
-                        // For safety, just advance one byte and let outer loop resync
-                        break;
+                        // Each game entry in shortcuts.vdf has multiple fields,
+                        // not just appid, AppName, and exe.
+                        // Steam stores a bunch of other stuff like:
+                        //
+                        // IsHidden (boolean, 1 byte),
+                        // AllowDesktopConfig (boolean, 1 byte),
+                        // LastPlayTime (uint64, 8 bytes),
+                        // icon, tags, etc..
+                        //
+                        // Each field has a type byte before its name that tells
+                        // us how many bytes the value takes. We only care about
+                        // TYPE_INT32 (0x02) and TYPE_STRING (0x01), but when we
+                        // hit any other type we need to skip past its value to
+                        // get to the next field.
+                        match field_type {
+                            // 0x03 = single byte (boolean/uint8), skip 1 byte
+                            // 0x04 = color, skip 4 bytes
+                            // 0x05 = uint64, skip 8 bytes
+                            // anything else we don't know, we advance one byte
+                            0x03 => {
+                                i += 1;
+                            }
+                            0x04 => {
+                                i += 4;
+                            }
+                            0x05 => {
+                                i += 8;
+                            }
+                            _ => {
+                                i += 1;
+                            }
+                        }
                     }
                 }
             }
@@ -247,7 +285,7 @@ pub fn parse_acf_file(path: &Path) -> Option<SteamGame> {
 
 /// Parses the ACF content and constructs a [`SteamGame`].
 pub fn parse_acf(contents: &str, steamapps_dir: &Path) -> Option<SteamGame> {
-    let app_id = find_acf_value(contents, "appid")?.parse::<u32>().ok()?;
+    let app_id = find_acf_value(contents, "appid")?.parse::<u64>().ok()?;
     let name = find_acf_value(contents, "name")?;
     let install_dir_name = find_acf_value(contents, "installdir")?;
     let install_dir = steamapps_dir.join("common").join(install_dir_name);
@@ -256,6 +294,7 @@ pub fn parse_acf(contents: &str, steamapps_dir: &Path) -> Option<SteamGame> {
         app_id,
         name,
         install_dir,
+        is_shortcut: false,
     })
 }
 
@@ -455,7 +494,9 @@ mod tests {
             app_id: 440,
             name: "Team Fortress 2".to_string(),
             install_dir: PathBuf::from("/fake"),
+            is_shortcut: false,
         };
         assert_eq!(game.launch_uri(), "steam://run/440");
+        assert_eq!(game.launch_uri(), "steam://rungameid/...");
     }
 }

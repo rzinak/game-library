@@ -6,6 +6,7 @@ export interface SteamGame {
   app_id: number;
   name: string;
   install_dir: string;
+  is_shortcut: boolean;
 }
 
 export interface CustomGame {
@@ -35,6 +36,8 @@ export interface Game {
   coverImage: string | null;
   /** steam app id — present for Steam games */
   appId?: number;
+  /** non-steam games */
+  isShortcut?: boolean;
   /** executable path — present for custom games */
   executable?: string;
   /** pre-computed Epic launcher URI — present for Epic games */
@@ -52,6 +55,7 @@ export function fromSteamGame(g: SteamGame): Game {
     platform: "steam",
     coverImage: `https://cdn.cloudflare.steamstatic.com/steam/apps/${g.app_id}/library_600x900.jpg`,
     appId: g.app_id,
+    isShortcut: g.is_shortcut,
     tags: [],
   };
 }

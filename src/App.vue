@@ -139,6 +139,7 @@ async function confirmLaunch() {
     await invoke("launch_game", {
       key: game.key,
       appId: game.appId ?? null,
+      isShortcut: game.isShortcut ?? null,
       executable: game.executable ?? null,
       epicLaunchUri: game.epicLaunchUri ?? null,
     });
