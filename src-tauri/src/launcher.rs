@@ -13,6 +13,7 @@ pub enum LaunchError {
 #[derive(Debug, Clone, PartialEq)]
 pub enum LaunchTarget {
     Steam { app_id: u32 },
+    SteamShortcut { app_id: u32 },
     EpicGame { launch_uri: String },
     Executable { path: String },
 }
@@ -22,8 +23,14 @@ impl LaunchTarget {
         Self::Steam { app_id }
     }
 
+    pub fn steam_shortcut(app_id: u32) -> Self {
+        Self::SteamShortcut { app_id }
+    }
+
     pub fn epic_game(launch_uri: impl Into<String>) -> Self {
-        Self::EpicGame { launch_uri: launch_uri.into() }
+        Self::EpicGame {
+            launch_uri: launch_uri.into(),
+        }
     }
 
     pub fn executable(path: impl Into<String>) -> Self {
@@ -44,6 +51,11 @@ impl LaunchTarget {
 pub fn launch(target: &LaunchTarget) -> Result<(), LaunchError> {
     match target {
         LaunchTarget::Steam { app_id } => launch_steam(*app_id),
+        LaunchTarget::SteamShortcut { app_id } => {
+            let full_id = ((*app_id as u64) << 32) | 0x02000000u64;
+            let uri = format!("steam://rungameid/{}", full_id);
+            open_uri(&uri)
+        }
         LaunchTarget::EpicGame { launch_uri } => open_uri(launch_uri),
         LaunchTarget::Executable { path } => {
             spawn_executable(path)?;
@@ -157,7 +169,9 @@ mod tests {
         let target = LaunchTarget::epic_game(uri);
         assert_eq!(
             target,
-            LaunchTarget::EpicGame { launch_uri: uri.to_string() }
+            LaunchTarget::EpicGame {
+                launch_uri: uri.to_string()
+            }
         );
     }
 
@@ -185,7 +199,9 @@ mod tests {
         let target = LaunchTarget::executable("/games/game.exe");
         assert_eq!(
             target,
-            LaunchTarget::Executable { path: "/games/game.exe".to_string() }
+            LaunchTarget::Executable {
+                path: "/games/game.exe".to_string()
+            }
         );
     }
 

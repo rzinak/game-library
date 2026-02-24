@@ -33,9 +33,26 @@ fn library_path(app: &AppHandle) -> PathBuf {
 
 #[tauri::command]
 fn get_steam_games() -> Result<Vec<SteamGame>, String> {
+    let steam_root =
+        PathBuf::from(std::env::var("HOME").unwrap_or_default() + "/.local/share/Steam");
+
+    let shortcuts: Vec<SteamGame> = steam::discover_shortcut_games(&steam_root)
+        .into_iter()
+        .map(|s| SteamGame {
+            app_id: s.app_id as u64,
+            name: s.app_name,
+            install_dir: PathBuf::from(&s.exe),
+            is_shortcut: true,
+        })
+        .collect();
+
     match steam::discover_games() {
-        Ok(games) => {
-            log::info!("Steam discovery: found {} games", games.len());
+        Ok(mut games) => {
+            games.extend(shortcuts);
+            log::info!(
+                "Steam discovery: found {} games (incl. shortcuts)",
+                games.len()
+            );
             Ok(games)
         }
         Err(e) => {
@@ -73,7 +90,11 @@ fn add_game(
     tags: Vec<String>,
     notes: Option<String>,
 ) -> Result<CustomGame, String> {
-    log::info!("Adding custom game: title={:?} executable={:?}", title, executable);
+    log::info!(
+        "Adding custom game: title={:?} executable={:?}",
+        title,
+        executable
+    );
     let game = CustomGame::new(
         title,
         executable,
@@ -115,18 +136,27 @@ fn launch_game(
     _state: State<AppState>,
     _key: String,
     app_id: Option<u32>,
+    is_shortcut: Option<bool>,
     executable: Option<String>,
     epic_launch_uri: Option<String>,
 ) -> Result<(), String> {
     log::info!(
-        "launch_game: key={:?} app_id={:?} executable={:?} epic={:?}",
+        "launch_game: key={:?} app_id={:?} is_shortcut={:?} executable={:?} epic={:?}",
         _key,
         app_id,
+        is_shortcut,
         executable,
         epic_launch_uri,
     );
     let target = match (app_id, epic_launch_uri, executable) {
-        (Some(id), _, _) => LaunchTarget::steam(id),
+        // (Some(id), _, _) => LaunchTarget::steam(id),
+        (Some(id), _, _) => {
+            if is_shortcut.unwrap_or(false) {
+                LaunchTarget::steam_shortcut(id)
+            } else {
+                LaunchTarget::steam(id)
+            }
+        }
         (_, Some(uri), _) => LaunchTarget::epic_game(uri),
         (_, _, Some(path)) => LaunchTarget::executable(path),
         (None, None, None) => {
