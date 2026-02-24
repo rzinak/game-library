@@ -11,6 +11,13 @@ pub enum SteamError {
     Io(#[from] std::io::Error),
 }
 
+#[derive(Debug)]
+pub struct ShortcutGame {
+    pub app_id: u32,
+    pub app_name: String,
+    pub exe: String,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct SteamGame {
     pub app_id: u32,
@@ -18,10 +25,143 @@ pub struct SteamGame {
     pub install_dir: PathBuf,
 }
 
+impl ShortcutGame {
+    pub fn launch_uri(&self) -> String {
+        format!("steam://rungameid/{}", self.app_id)
+    }
+}
+
 impl SteamGame {
     pub fn launch_uri(&self) -> String {
         format!("steam://run/{}", self.app_id)
     }
+}
+
+/// Finds all shortcuts.vdf files across all Steam user accounts.
+pub fn find_shortcuts_vdf_paths(steam_root: &Path) -> Vec<PathBuf> {
+    let userdata = steam_root.join("userdata");
+    let mut results = Vec::new();
+
+    let Ok(entries) = std::fs::read_dir(&userdata) else {
+        return results;
+    };
+
+    for entry in entries.flatten() {
+        let path = entry.path().join("config/shortcuts.vdf");
+        if path.exists() {
+            results.push(path);
+        }
+    }
+
+    results
+}
+
+/// Parses a binary shortcuts.vdf file and returns the list of non-Steam shortcuts.
+pub fn parse_shortcuts_vdf(data: &[u8]) -> Vec<ShortcutGame> {
+    let mut games = Vec::new();
+    let mut i = 0;
+
+    // Binary VDF markers
+    const TYPE_MAP: u8 = 0x00; // start of a map/object
+    const TYPE_STRING: u8 = 0x01; // null-terminated string value
+    const TYPE_INT32: u8 = 0x02; // 4-byte little-endian int value
+    const END_MAP: u8 = 0x08; // end of map/object
+
+    // Skip the outer "shortcuts" key header: \x00 + "shortcuts" + \x00
+    // We just scan for each entry map
+
+    fn read_cstring(data: &[u8], pos: &mut usize) -> String {
+        let start = *pos;
+        while *pos < data.len() && data[*pos] != 0x00 {
+            *pos += 1;
+        }
+        let s = String::from_utf8_lossy(&data[start..*pos]).to_string();
+        *pos += 1; // consume null terminator
+        s
+    }
+
+    fn read_u32_le(data: &[u8], pos: &mut usize) -> u32 {
+        if *pos + 4 > data.len() {
+            return 0;
+        }
+        let val = u32::from_le_bytes([data[*pos], data[*pos + 1], data[*pos + 2], data[*pos + 3]]);
+        *pos += 4;
+        val
+    }
+
+    while i < data.len() {
+        if data[i] != TYPE_MAP {
+            i += 1;
+            continue;
+        }
+        i += 1;
+
+        // Read the map key (entry index like "0", "1", ...)
+        let key = read_cstring(data, &mut i);
+        // Only process numeric keys (the per-game entries)
+        if key
+            .chars()
+            .next()
+            .map(|c| c.is_ascii_digit())
+            .unwrap_or(false)
+        {
+            let mut app_id: u32 = 0;
+            let mut app_name = String::new();
+            let mut exe = String::new();
+
+            // Parse fields until end-of-map
+            while i < data.len() && data[i] != END_MAP {
+                let field_type = data[i];
+                i += 1;
+                let field_name = read_cstring(data, &mut i);
+
+                match field_type {
+                    TYPE_INT32 => {
+                        let val = read_u32_le(data, &mut i);
+                        if field_name.eq_ignore_ascii_case("appid") {
+                            app_id = val;
+                        }
+                    }
+                    TYPE_STRING => {
+                        let val = read_cstring(data, &mut i);
+                        match field_name.to_lowercase().as_str() {
+                            "appname" => app_name = val,
+                            "exe" => exe = val,
+                            _ => {}
+                        }
+                    }
+                    END_MAP => break,
+                    _ => {
+                        // Unknown type — skip by scanning to next null or marker
+                        // For safety, just advance one byte and let outer loop resync
+                        break;
+                    }
+                }
+            }
+
+            if !app_name.is_empty() {
+                games.push(ShortcutGame {
+                    app_id,
+                    app_name,
+                    exe,
+                });
+            }
+        }
+    }
+
+    games
+}
+
+/// Discovers all non-Steam shortcut games for a given Steam root.
+pub fn discover_shortcut_games(steam_root: &Path) -> Vec<ShortcutGame> {
+    find_shortcuts_vdf_paths(steam_root)
+        .iter()
+        .flat_map(|path| {
+            std::fs::read(path)
+                .map(|data| parse_shortcuts_vdf(&data))
+                .unwrap_or_default()
+        })
+        .collect()
 }
 
 /// Returns the default Steam root path for the current OS.

@@ -33,9 +33,25 @@ fn library_path(app: &AppHandle) -> PathBuf {
 
 #[tauri::command]
 fn get_steam_games() -> Result<Vec<SteamGame>, String> {
+    let steam_root =
+        PathBuf::from(std::env::var("HOME").unwrap_or_default() + "/.local/share/Steam");
+
+    let shortcuts: Vec<SteamGame> = steam::discover_shortcut_games(&steam_root)
+        .into_iter()
+        .map(|s| SteamGame {
+            app_id: s.app_id,
+            name: s.app_name,
+            install_dir: PathBuf::from(&s.exe),
+        })
+        .collect();
+
     match steam::discover_games() {
-        Ok(games) => {
-            log::info!("Steam discovery: found {} games", games.len());
+        Ok(mut games) => {
+            games.extend(shortcuts);
+            log::info!(
+                "Steam discovery: found {} games (incl. shortcuts)",
+                games.len()
+            );
             Ok(games)
         }
         Err(e) => {
@@ -73,7 +89,11 @@ fn add_game(
     tags: Vec<String>,
     notes: Option<String>,
 ) -> Result<CustomGame, String> {
-    log::info!("Adding custom game: title={:?} executable={:?}", title, executable);
+    log::info!(
+        "Adding custom game: title={:?} executable={:?}",
+        title,
+        executable
+    );
     let game = CustomGame::new(
         title,
         executable,
